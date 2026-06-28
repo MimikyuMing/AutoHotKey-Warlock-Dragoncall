@@ -13,7 +13,26 @@ AHK 版本需要v2.0
 2. [Ctrl + F5] 重载脚本
 3. [XButton2] 鼠标侧键2 持续触发
 4. [Ctrl + F3] 显示/隐藏GUI
-5. [XButton1] 鼠标侧键1 闪避(ss) 
+5. [XButton1] 鼠标侧键1 闪避(ss)
+
+---
+
+## [v3.6] - 2026-06-28 — 异构计算架构（C++/AHK 混合）
+
+### 🚀 架构革命
+- **C++ DLL 取色引擎**：引入 DXGI 硬件加速捕获（CaptureDXGI.dll），取色延迟从 ~2ms 降至 <0.5ms，彻底释放 AHK 主线程。
+- **共享内存零拷贝通信**：通过 Windows FileMapping 实现 C++ → AHK 状态传递，无序列化开销，微秒级响应。
+
+### 🧠 逻辑调度升级
+- **MinHeap 优先队列冷却器**：统一管理 Dragoncall/Wingstorm 等多技能冷却，支持批量事件调度与同名防重入。
+- **ActionMutex 帧内互斥状态机**：支持 OpenSleep/SoulflareSleep/LeechSleep 三级休眠，精确控制技能释放窗口。
+
+### 📊 可观测性增强
+- **异步批量日志系统**：非阻塞日志队列 + 100ms 批量落盘，对主逻辑零性能影响，支持按日期分片归档。
+
+### 🛠 部署与配置
+- **FileInstall 嵌入部署**：所有 DLL 与配置编译进 EXE，运行时释放到 `%TEMP%`，零依赖启动。
+- **AppData 用户配置隔离**：配置写入 `%APPDATA%\Dragoncall\config.ini`，程序升级不丢失用户设置。
 
 ---
 
