@@ -17,6 +17,44 @@ AHK 版本需要v2.0
 
 ---
 
+## [v3.7] - 2026-07-11 — 状态机深化与安全执行模型
+### ⚙️ 动作互斥引擎升级
+- 睡眠队列化：ActionMutex 由单一睡眠状态升级为按过期时间排序的优先级队列，支持 OpenSleep / SoulflareSleep / LeechSleep / XSleep 等多重后摇保护共存，彻底消除旧版覆盖问题。
+
+- 精确释放：ReleaseSleep(type) 可针对指定睡眠类型单独解除，避免全局误释放；开门释放失败时仅清除 OpenSleep，不影响其他保护。
+
+- X 键独立保护：新增 X Sleep (type 5)，热键 ~$X:: 触发后全阻塞 MainLogic 1000ms，行为与 Open Sleep 一致，无需侵入主循环。
+
+### 🧠 逻辑调度强化
+- 硬间隔防抖：LogicExecuter 引入 g_LastExecutionTick，强制两次 MainLogic 执行间隔 ≥ LOGIC_INTERVAL * 0.9，杜绝定时器堆积造成的连续触键。
+
+- 帧幂等增强：复用共享内存 frameId 实现严格一帧一决策，配合调度器实现稳定单次执行。
+
+- 休眠阻塞语义：HandleSleepState 返回布尔标志，MainLogic 根据返回值提前 return，堵住睡眠期间技能泄漏的漏洞。
+
+### 🕹️ 技能释放窗口控制
+- 预输入与冷却窗口：引入 BombardmentPreInput、LeechDisableWindow、OpenTiming 等时间窗约束，精细控制开门、掠夺、死灵突袭的释放时机，防止后摇冲突。
+
+- 掠夺状态机扩展：支持 Leech_Dark_L 暗色检测，并新增 g_limitationLeech 独立配置选项。
+
+- Wingstorm 安全释放：增加掠夺后 0.8+0.35s、开门后 0.6s 的禁用期，确保首次必出暴魔灵。
+
+### 📊 可观测性扩展
+- KeyLogger 低级键盘钩子：独立类 KeyLogger，全局捕获所有按键（可选仅模拟输入），采用批量队列 + 空闲冲刷策略，对主逻辑零干扰。
+
+- HiResTimer 高精度时钟：新增 Now() 方法，输出 MM/DD HH:mm:ss:ms 格式时间戳，基于 QPC 与 FILETIME 同步，微秒级精度。
+
+- 关键路径日志增强：HandleSleepState 中添加详细的开门状态日志（OpenReady/Black/异常），辅助调试预输入与后摇保护。
+
+### 🛠 配置与杂项
+- 新增 GUI 选项：支持“掠夺限制释放”、“开门限制释放”、“金掠夺”独立开关，配置持久化到 config.ini。
+
+- 代码结构化：所有状态收敛至 ActionMutex、LogicEngine、CaptureEngine 等类，消除全局变量污染，为模块化拆分铺路。
+
+- 性能微调：DETECT_INTERVAL 由 2ms 调整为 5ms（FRAME_MS * 0.30），平衡状态更新频率与 CPU 占用。
+
+---
+
 ## [v3.6] - 2026-06-28 — 异构计算架构（C++/AHK 混合）
 
 ### 🚀 架构革命
