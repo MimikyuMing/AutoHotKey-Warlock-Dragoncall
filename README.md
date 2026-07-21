@@ -21,6 +21,83 @@ version3.6之后:
 2. [XButton1] 鼠标侧键1 闪避(ss)
 3. [F11] 重载脚本
 
+---
+
+## [v3.9] - 2026-07-21 — 实时数据层、输入队列与可观测性增强
+
+### 🧩 架构重构：实时数据层与输入解耦
+
+#### 新增 RealtimeMap 实时数据层
+- **新增 `Lib/RealtimeMap.ahk`**：继承 `Map` 基类，重写 `Get()` 方法，根据 `StateManager.realtimeMode` 动态切换数据来源
+  - **实时模式**：通过 `CaptureClient.GetCachedFrame()` 直接从共享内存读取当前帧的技能/增益状态，实现零拷贝查询
+  - **缓存模式**：回退到父类 `Map` 的缓存数据（由定时器同步），兼容原有逻辑
+- **帧缓存机制**：`CaptureClient` 新增 `cachedFrameId` / `cachedFrameData` 静态缓存，同一帧内多次查询共享内存仅执行一次 `ReadFrame()`，大幅降低开销
+- **StateManager 初始化重构**：新增 `Init()` 方法，将 `_skillState` 和 `_buffState` 初始化为 `RealtimeMap` 实例，并注入 `type`（skill/buff）和 `idxMap`（名称→索引映射）
+
+#### 新增 InputQueue 异步输入队列
+- **新增 `Lib/InputQueue.ahk`**：解耦"业务决策"与"按键发送"
+  - 维护 FIFO 队列，业务逻辑仅需 `Push(key)` 即可入队
+  - 独立的 `Process()` 定时器以 `-1ms` 间隔消费队列，执行 `SendInput`
+  - 支持通过 `engine` 参数注入发送许可提供者（如 `LogicEngine.g_LogicEnabled`）
+  - 逻辑引擎关闭时自动清空队列并停止发送
+- **LogicRunner 新增 `SendKey()` 方法**：根据 `isUsedInputQueue` 开关决定直接发送还是入队，为后续输入调度预留扩展空间
+
+
+### 📊 可观测性与性能监控（全新模块）
+
+#### PerformanceMonitor 性能监控系统
+- **新增 `Lib/PerformanceMonitor.ahk`**：提供两维度可观测能力
+  - **阶段耗时统计（微秒级）**：`Start(stage)` / `End(stage)` 埋点 API，自动记录每个阶段的执行次数、平均/最小/最大耗时
+  - **系统资源监控（可选）**：基于 `GetProcessTimes` 采样 CPU 使用率，基于 `GetProcessMemoryInfo` 采样内存工作集
+  - **定期快照报告**：支持 `reportInterval` 控制生成间隔，退出时自动调用 `DumpReport()` 写入 `log/Performance/YYYY-MM-DD.txt`
+- **关键路径埋点**：已在 `MainLogic`、`BeginFrame`、`BuffQuery`、`IsInSleep`、`OpenCondition`、`Action1~4`、各 `Send` 操作、`RealtimeGet`、`UpdateState`、`HandleSleep` 等核心路径嵌入埋点
+
+
+### 🕹️ 核心逻辑引擎优化
+
+#### 暴魔灵优先逻辑
+- 新增 `g_enablePriorityUseDragoncall` 参数（从 INI 读取 `EnablePriorityUseDragoncall`）
+- 当开启且 `Critical_Dragoncall` 技能就绪时，**优先使用暴魔灵而非开门（Open）**，优化输出优先级
+- `Wingstorm` 条件增强：当暴魔灵暴击就绪时，禁止使用 `Wingstorm`，确保优先级正确
+
+#### 技能条件精炼
+- **Open 条件拆解**：将原复合条件拆解为 `deltaBombardment`、`deltaLeech`、`bombardmentWindow`、`leechWindowMin/Max` 等多步变量，提升代码可读性与可调试性
+- **Action4 阈值调整**：`MantraReady` 的 Focus 阈值从 `(hasLeechBuff ? 4 : 5)` 调整为 `(hasLeechBuff ? 3 : 4)`，优化低 Focus 下的技能释放时机
+- **DelaySendTab 增强**：在发送 `Tab` 前额外发送一次 `E` 键，适配游戏内的超神释放前置操作
+
+#### 性能埋点集成
+- 在 `_MainLogic` 及各子阶段嵌入 `PerformanceMonitor.Start/End`，为后续性能调优提供数据支撑
+
+
+### 📝 日志系统增强
+
+#### 按日期分文件存储
+- **KeyLogger.ahk**：新增 `GetLogPath()` 方法，日志按日存储到 `log/KeyLog/YYYY-MM-DD.txt`
+- **Log.ahk**：保留按日分割逻辑（`log_YYYYMMDD.txt`），与 KeyLogger 保持一致的目录规范
+
+#### 全局日志开关（WRITELOG）
+- **Globals.ahk** 新增 `WRITELOG` 全局变量
+- **Log.ahk / KeyLogger.ahk** 新增 `Enabled` 静态属性，受 `WRITELOG` 统一控制
+- 关闭时 `Write()` / `AppendLog()` 直接返回，零开销，适用于生产环境关闭调试日志
+
+
+### 🛠 配置与集成层
+
+#### Dragoncall-Config.ini 新增配置项
+```ini
+[Settings]
+Gold_Leech=0                    # 金掠夺开关
+LimitationOpen=1                # 开门限制释放
+LimitationLeech=0               # 掠夺限制释放
+RealtimeMode=1                  # 实时模式开关（直接读共享内存）
+PerformanceMonitor=1            # 性能监控总开关
+MonitorCpu=1                    # CPU 使用率监控
+MonitorMemory=1                 # 内存占用监控
+EnablePriorityUseDragoncall=0   # 优先暴魔灵（暴击时优先使用暴魔灵）
+IsUsedInputQueue=0              # 是否启用 InputQueue 异步队列
+ReportInterval=0                # 性能报告间隔（分钟，0=关闭）
+WRITELOG=0                      # 全局日志写入开关
+```
 
 ---
 
