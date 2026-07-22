@@ -24,13 +24,13 @@ class LogicEngine extends LogicRunner {
     static lastUsedOpen := -1
     static WRITELOG := false
     static g_enablePriorityUseDragoncall := 0
+    static lastUsedLeech := -1
 
     ; ---------- 实现抽象方法 ----------
     static _MainLogic() {
         PerformanceMonitor.Start("MainLogic")
         start := HiResTimer.GetTick()
         static lastUsedBombardment := -1
-        static lastUsedLeech := -1
         static lastUsedD := -1
         static lastUsedW := -1
 
@@ -78,7 +78,7 @@ class LogicEngine extends LogicRunner {
             local OpenTiming := 3000
 
             deltaBombardment := HiResTimer.DeltaMs(lastUsedBombardment, HiResTimer.GetTick())
-            deltaLeech       := HiResTimer.DeltaMs(lastUsedLeech, HiResTimer.GetTick())
+            deltaLeech       := HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick())
 
             bombardmentWindow := (deltaBombardment <= BombardmentPreInput)
             leechWindowMin    := (deltaLeech >= LeechDisableWindow)
@@ -135,7 +135,7 @@ class LogicEngine extends LogicRunner {
                     ; 判斷是否在使用過程中
 
                     result := 1500 >= HiResTimer.DeltaMs(
-                        lastUsedLeech, HiResTimer.GetTick()
+                        this.lastUsedLeech, HiResTimer.GetTick()
                     )
 
                     ; 如果处于BUFF的时候
@@ -164,7 +164,7 @@ class LogicEngine extends LogicRunner {
             local allow_use_W := 
                     !criticalDragoncallReady &&
                     D_Limit <= HiResTimer.DeltaMs(lastUsedD, HiResTimer.GetTick()) && 
-                    (LeechAfterBanWingstorm <= HiResTimer.DeltaMs(lastUsedLeech, HiResTimer.GetTick()) 
+                    (LeechAfterBanWingstorm <= HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) 
                     && OpenAfterBanWingstorm <= HiResTimer.DeltaMs(this.lastUsedOpen, HiResTimer.GetTick()))
 
             if (this.g_Mutex.CanExecute(1)) {
@@ -215,7 +215,7 @@ class LogicEngine extends LogicRunner {
                     if (LeechReady) {
                         PerformanceMonitor.Start("SendLeech")
                         this.SendKey("f")
-                        lastUsedLeech := HiResTimer.GetTick()
+                        this.lastUsedLeech := HiResTimer.GetTick()
                         this.g_Mutex.OnExecuted(3)
                         this.writeLogEvent("f", HiResTimer.GetTick())
                         PerformanceMonitor.End("SendLeech")

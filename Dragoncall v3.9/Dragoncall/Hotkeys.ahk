@@ -31,3 +31,10 @@ F11:: {
     App.Cleanup()
     Reload
 }
+
+~$F::{
+    LeechReady := StateManager._skillState.Get("Leech_R", false)
+    if(LeechReady){
+        LogicEngine.lastUsedLeech := HiResTimer.GetTick()
+    }
+}
