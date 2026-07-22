@@ -103,9 +103,11 @@ class LogicEngine extends LogicRunner {
 
             ; ---------- 5. Action2 : Soulflare 超神 ----------
             PerformanceMonitor.Start("SoulflareCondition")
+            
             soulFlareReady := this.g_AutoSoulFlare && StateManager._skillState.Get("SoulFlare", false)
             delaySoulFlare := this.g_Gold_Leech
             PerformanceMonitor.End("SoulflareCondition")
+
 
             if (this.g_Mutex.CanExecute(2) && soulFlareReady) {
                 if (delaySoulFlare) {
@@ -115,9 +117,36 @@ class LogicEngine extends LogicRunner {
                         PerformanceMonitor.End("DelayTabSet")
                     }
                 } else {
-                    PerformanceMonitor.Start("SendSoulflare")
-                    this.DelaySendTab()
-                    PerformanceMonitor.End("SendSoulflare")
+                    /**
+                     * 1. f存在,tab存在,則先tab後f
+                     * 2. f使用前搖,tab存在,直接tab
+                     * 3. f不存在,tab不使用
+                     */
+
+                    preLeech := StateManager._skillState.Get("Leech_Dark_L", false) || StateManager._skillState.Get("Leech_L", false)
+                    LeechIsUsedOrExist := false
+
+                    ; 判斷是否Leech是否出現圖標
+                    if(preLeech){
+                        LeechIsUsedOrExist := true
+                    }
+                    ;  tab fps 95 + 60 158 58+5=63
+                    ;  F fps 59 ->36/60fps
+                    ; 判斷是否在使用過程中
+
+                    result := 1500 >= HiResTimer.DeltaMs(
+                        lastUsedLeech, HiResTimer.GetTick()
+                    )
+
+                    ; 如果处于BUFF的时候
+                    LeechIsUsedOrExist := LeechIsUsedOrExist || result || hasLeechBuff
+
+                    lastResult := soulFlareReady && LeechIsUsedOrExist
+                    if(lastResult){
+                        PerformanceMonitor.Start("SendSoulflare")
+                        this.DelaySendTab()
+                        PerformanceMonitor.End("SendSoulflare")
+                    }
                 }
             }
 
@@ -165,6 +194,8 @@ class LogicEngine extends LogicRunner {
                 ? StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_R", false) && !StateManager._skillState.Get("Dragoncall_Mid", false)
                 : true
             allowLeech := false
+            soulFlareReady := this.g_AutoSoulFlare && StateManager._skillState.Get("SoulFlare", false)
+
             if (this.g_Mutex.CanExecute(3) && preLeech) {
                 if (hasSoulFlareBuff) {
                     if (!hasLeechBuff)
@@ -175,6 +206,11 @@ class LogicEngine extends LogicRunner {
                     else if (this.g_isUseLeechHasLeechBuff && leech_condition)
                         allowLeech := true
                 }
+
+                if(soulFlareReady){
+                    return
+                }
+
                 if (allowLeech) {
                     if (LeechReady) {
                         PerformanceMonitor.Start("SendLeech")
@@ -310,7 +346,7 @@ class LogicEngine extends LogicRunner {
     ; 辅助方法
     static DelaySendTab() {
         if (this.g_Mutex.CanExecute(2) && this.g_AutoSoulFlare && StateManager._skillState.Get("SoulFlare", false)) {
-            this.SendKey("E")
+            this.SendKey("e")
             this.SendKey("{tab}")
             this.g_Mutex.OnExecuted(2)
             this.writeLogEvent("tab", HiResTimer.GetTick())
