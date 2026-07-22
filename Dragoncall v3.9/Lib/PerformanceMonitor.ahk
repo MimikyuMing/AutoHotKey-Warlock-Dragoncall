@@ -111,9 +111,9 @@ class PerformanceMonitor {
     static End(stage) {
         if !this.enabled
             return
-        startTick := this.timers.Delete(stage)
-        if !IsSet(startTick)
+        if !this.timers.Has(stage)    ; 避免因未配对 Start 而崩溃
             return
+        startTick := this.timers.Delete(stage)
         elapsedUs := HiResTimer.DeltaUs(startTick, HiResTimer.GetTick())
         if !this.records.Has(stage)
             this.records[stage] := {count: 0, total: 0.0, min: 1e9, max: 0}
