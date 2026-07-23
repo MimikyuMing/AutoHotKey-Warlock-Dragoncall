@@ -127,19 +127,24 @@ class LogicEngine extends LogicRunner {
                     LeechIsUsedOrExist := false
 
                     ; 判斷是否Leech是否出現圖標
-                    if(preLeech){
-                        LeechIsUsedOrExist := true
-                    }
                     ;  tab fps 95 + 60 158 58+5=63
                     ;  F fps 59 ->36/60fps
+
+
+                    ; used X : f:96fps , tab:138~139fps(中途插入X之后的事情)
+
+
                     ; 判斷是否在使用過程中
 
-                    result := 1500 >= HiResTimer.DeltaMs(
-                        this.lastUsedLeech, HiResTimer.GetTick()
-                    )
+                    result := 
+                        this.lastUsedLeech != 0 
+                        && 
+                        1500 >= HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) 
+                        && 
+                        15000 <= HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick())
 
                     ; 如果处于BUFF的时候
-                    LeechIsUsedOrExist := LeechIsUsedOrExist || result || hasLeechBuff
+                    LeechIsUsedOrExist := preLeech || result || hasLeechBuff
 
                     lastResult := soulFlareReady && LeechIsUsedOrExist
                     if(lastResult){
