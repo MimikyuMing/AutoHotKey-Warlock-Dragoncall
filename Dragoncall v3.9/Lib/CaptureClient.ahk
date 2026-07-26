@@ -15,6 +15,8 @@ class CaptureClient {
     static cachedFrameId := -1
     static cachedFrameData := false
 
+    static RealtimeMode := 0
+
     ; 获取当前帧数据（同一帧内只读取一次共享内存）
     static GetCachedFrame() {
         ; 每次都重新读帧 ID（读一个 UInt 开销极低）
