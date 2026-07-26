@@ -21,7 +21,6 @@ class PerformanceMonitor {
 
     static reportTimer := 0            ; 定期报告定时器
     static reportInterval := 0         ; 分钟，0=关闭
-
     ; ---------- 初始化 ----------
     static Init(enable, enableCpu := false, enableMem := false, reportInterval:= 0) {
         this.enabled    := enable
@@ -126,29 +125,43 @@ class PerformanceMonitor {
             rec.max := elapsedUs
     }
 
-    ; ---------- 报告增强 ----------
+
     static Report() {
         if !this.enabled
-        return "PerformanceMonitor disabled"
+            return "PerformanceMonitor disabled"
 
         s := "`n========== Performance Report ==========`n"
-
         s .= "Generated at " HiResTimer.NowBeijing() "`n"
 
-        s .= "+----------------------+--------+------------+------------+------------+`n"
-        s .= "| Stage                |  Count |   Avg (us) |   Min (us) |   Max (us) |`n"
-        s .= "+----------------------+--------+------------+------------+------------+`n"
+        s .= "+--------------------------------+--------+------------+------------+------------+`n"
+        s .= "| Stage                          |  Count |   Avg (us) |   Min (us) |   Max (us) |`n"
+        s .= "+--------------------------------+--------+------------+------------+------------+`n"
 
-        for stage, rec in this.records {
-            avg := rec.count > 0 ? rec.total / rec.count : 0
-            row := Format("| {1:-20s} | {2:6d} | {3:10.1f} | {4:10.1f} | {5:10.1f} |",
-                        stage, rec.count, avg, rec.min, rec.max)
+        sorted := []
+        for stage, rec in this.records
+            sorted.Push({stage: stage, count: rec.count, avg: rec.total / rec.count, min: rec.min, max: rec.max})
+
+        ; 冒泡排序（降序）
+        Loop sorted.Length - 1 {
+            i := A_Index
+            Loop sorted.Length - i {
+                j := A_Index
+                if sorted[j].max < sorted[j + 1].max {
+                    tmp := sorted[j]
+                    sorted[j] := sorted[j + 1]
+                    sorted[j + 1] := tmp
+                }
+            }
+        }
+
+        for item in sorted {
+            row := Format("| {1:-30s} | {2:6d} | {3:10.1f} | {4:10.1f} | {5:10.1f} |",
+                        item.stage, item.count, item.avg, item.min, item.max)
             s .= row "`n"
         }
 
-        s .= "+----------------------+--------+------------+------------+------------+`n"
+        s .= "+--------------------------------+--------+------------+------------+------------+`n"
 
-        ; 资源统计
         if (this.monitorCpu && this.cpuSamples.Length > 0) {
             avgCpu := 0.0
             for val in this.cpuSamples
@@ -173,7 +186,6 @@ class PerformanceMonitor {
         s .= "==========================================`n"
         return s
     }
-
     static DumpReport() {
         if !this.enabled
             return
