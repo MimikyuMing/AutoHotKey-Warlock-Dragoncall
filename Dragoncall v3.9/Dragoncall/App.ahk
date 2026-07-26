@@ -14,14 +14,21 @@
 class App {
     static Init() {
         HiResTimer.Init()
+        OutputDebug "1"
         Log.Init()
+        OutputDebug "2"
         this.LoadSettings()
+        OutputDebug "3"
         CaptureEngine.Start()
-        StateManager.Init(CaptureClient)   ; 传入基类引用，也可直接使用 CaptureClient
-        StateManager.realtimeMode := CaptureEngine.RealtimeMode  ; 假设该值已从 INI 读取
+        OutputDebug "4"
+        StateManager.Init(CaptureEngine)
+        OutputDebug "5"
         this.CreateTray()
+        OutputDebug "6"
         KeyLogger.Start()
+        OutputDebug "7"
         InputQueue.Init(LogicEngine.g_LogicEnabled)
+        OutputDebug "8"
         OnExit App.Cleanup
     }
 
@@ -42,7 +49,7 @@ class App {
         enablePerf := ParseBool(settings.Has("PerformanceMonitor") ? settings["PerformanceMonitor"] : false)
         enableCpu  := ParseBool(settings.Has("MonitorCpu") ? settings["MonitorCpu"] : false)
         enableMem  := ParseBool(settings.Has("MonitorMemory") ? settings["MonitorMemory"] : false)
-        reportInterval  := ParseBool(settings.Has("ReportInterval") ? settings["ReportInterval"] : false)
+        reportInterval  := ParseBool(settings.Has("ReportInterval") ? settings["ReportInterval"] : 0)
         PerformanceMonitor.Init(enablePerf, enableCpu, enableMem, reportInterval)
         globalWriteLog := ParseBool(settings.Has("WRITELOG") ? settings["WRITELOG"] : false)
         Log.Enabled := globalWriteLog
