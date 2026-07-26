@@ -3,20 +3,24 @@
 #Include RealtimeMap.ahk
 
 class StateManager {
-    static _buffState := RealtimeMap()
-    static _skillState := RealtimeMap()
+    static _buffState := Map()
+    static _skillState := Map()
     static _focusState := Map()
 
     static realtimeMode := false
 
     static Init(captureClientObj) {
+
+        this._skillState := RealtimeMap(captureClientObj.RealtimeMode)
+        this._buffState := RealtimeMap(captureClientObj.RealtimeMode)
+
         ; 为 _skillState 配置实时查询参数
         this._skillState.type := "skill"
-        this._skillState.idxMap := CaptureEngine.skillIdx   ; 或从 captureClientObj 获取
+        this._skillState.idxMap := captureClientObj.skillIdx   
 
         ; 为 _buffState 配置实时查询参数
         this._buffState.type := "buff"
-        this._buffState.idxMap := CaptureEngine.buffIdx
+        this._buffState.idxMap := captureClientObj.buffIdx
     }
 
     static GetBuffState() => this._buffState

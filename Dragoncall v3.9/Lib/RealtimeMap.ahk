@@ -6,19 +6,23 @@
 class RealtimeMap extends Map {
     type   := ""          ; "skill" 或 "buff"
     idxMap := Map()       ; 名称 → 共享内存索引
-
+    realtimeMode := false
 
     ; 帧缓存（静态，所有 RealtimeMap 实例共享）
     static lastFrameId   := -1
     static lastFrameData := false
 
+    __New(params){
+        this.realtimeMode := params
+    }
+
     ; 覆盖 Get 方法
     Get(key, default?) {
-        if (StateManager.realtimeMode && this.type) {
+        if (this.realtimeMode && this.type) {
             ; 获取缓存帧（极快，同一帧内只读一次共享内存）
             frameData := CaptureClient.GetCachedFrame()
             if IsObject(frameData) {
-                PerformanceMonitor.Start("RealtimeGet")
+                PerformanceMonitor.Start("RealtimeMap-RealtimeGet")
                 idx := this.idxMap.Get(key, -1)
                 result := false
                 if idx >= 0 {
@@ -26,7 +30,7 @@ class RealtimeMap extends Map {
                     if idx < bytes.Size
                         result := NumGet(bytes, idx, "UChar") != 0
                 }
-                PerformanceMonitor.End("RealtimeGet")
+                PerformanceMonitor.End("RealtimeMap-RealtimeGet")
                 return result
             }
             return false
