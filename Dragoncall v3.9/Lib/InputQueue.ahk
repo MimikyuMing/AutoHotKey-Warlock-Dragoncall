@@ -1,11 +1,13 @@
-; Lib/InputQueue.ahk
 class InputQueue {
-    static queue := []
-    static timer := 0
+    static queue        := []
+    static timer        := 0
     static isProcessing := false
-    static engine := 0           ; 期望是一个类，其静态属性 g_LogicEnabled 表示是否允许发送
+    static engine       := 0
 
-    ; 注入发送许可提供者（一个包含 g_LogicEnabled 静态属性的类）
+    ; ---------- 发送间隔控制 ----------
+    static minIntervalUs := 1*1000   ; 同一按键最小发送间隔 10 毫秒（微秒）
+    static lastSendTicks := Map()    ; 每个按键的上次发送时刻 (QPC)
+
     static Init(provider := 0) {
         this.Clear()
         if provider
@@ -16,55 +18,65 @@ class InputQueue {
         if (key == "")
             return
         this.queue.Push(key)
-        this.StartTimer()
-    }
-
-    static StartTimer() {
-        if !this.timer
+        if !this.timer && !this.isProcessing
             this.timer := SetTimer(ObjBindMethod(InputQueue, "Process"), -1)
     }
 
     static Process() {
         PerformanceMonitor.Start("InputQueue")
-        try{
+        try {
             if this.isProcessing
                 return
 
-            ; 检查引擎是否允许发送（如果未注入，默认允许）
             if (this.engine && !this.engine.g_LogicEnabled) {
                 this.Clear()
                 return
             }
 
             if this.queue.Length == 0 {
-                this.timer := 0
+                this.StopTimer()
                 return
             }
 
             this.isProcessing := true
             key := this.queue.RemoveAt(1)
 
-            ; 发送前再次检查（防止取出瞬间逻辑被关闭）
-            if (!this.engine || this.engine.g_LogicEnabled)
+            ; 发送前检查该按键的上次发送间隔
+            allowSend := true
+            lastTick := this.lastSendTicks.Get(key, 0)
+            elapsed := HiResTimer.DeltaUs(lastTick, HiResTimer.GetTick())
+            if (elapsed < this.minIntervalUs)
+                allowSend := false   ; 间隔不足，丢弃
+
+            if (allowSend) {
                 SendInput key
+                this.lastSendTicks[key] := HiResTimer.GetTick()
+            }
+            ; 被丢弃的按键不做任何处理
 
             this.isProcessing := false
 
-            if (!this.engine || this.engine.g_LogicEnabled)
+            ; 继续处理下一个或停止定时器
+            if (this.queue.Length > 0 && (!this.engine || this.engine.g_LogicEnabled))
                 this.timer := SetTimer(ObjBindMethod(InputQueue, "Process"), -1)
             else
-                this.Clear()
-        }finally{
+                this.StopTimer()
+
+        } finally {
             PerformanceMonitor.End("InputQueue")
+        }
+    }
+
+    static StopTimer() {
+        if this.timer {
+            this.timer.Stop()
+            this.timer := 0
         }
     }
 
     static Clear() {
         this.queue := []
-        if this.timer {
-            SetTimer(this.timer, 0)
-            this.timer := 0
-        }
         this.isProcessing := false
+        this.StopTimer()
     }
 }
