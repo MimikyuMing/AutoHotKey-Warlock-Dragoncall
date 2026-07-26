@@ -28,7 +28,7 @@ class DragoncallMutex extends ActionMutex {
                 case 1: return false
                 case 2:
                     if (this.isSFirst) {
-                        if (action == 3 && HiResTimer.GetTick() < HiResTimer.SubMs(800, expire))
+                        if (action == 3 && HiResTimer.GetTick() < HiResTimer.SubMs(700, expire))
                             return false
                         if (action != 1 && action != 3)
                             return false
