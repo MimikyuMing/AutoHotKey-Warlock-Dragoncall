@@ -5,6 +5,7 @@
 #Include ActionMutex.ahk
 #Include Globals.ahk
 #Include InputQueue.ahk
+#Include PerformanceMonitor.ahk
 
 class LogicRunner {
     static g_LogicEnabled := false
@@ -58,11 +59,13 @@ class LogicRunner {
             this.ScheduleNextLogic()
     }
 
-    static SendKey(key){
+    static SendKey(key, str){
+        PerformanceMonitor.Start(str)
         if(this.isUsedInputQueue){
             InputQueue.Push(key)
         }else{
             Send key
         }
+        PerformanceMonitor.End(str)
     }
 }
