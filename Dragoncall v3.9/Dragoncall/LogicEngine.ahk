@@ -28,7 +28,7 @@ class LogicEngine extends LogicRunner {
 
     ; ---------- 实现抽象方法 ----------
     static _MainLogic() {
-        PerformanceMonitor.Start("MainLogic")
+        PerformanceMonitor.Start("LogEngine-MainLogic")
         start := HiResTimer.GetTick()
         static lastUsedBombardment := -1
         static lastUsedD := -1
@@ -36,35 +36,27 @@ class LogicEngine extends LogicRunner {
 
         ; 帧级幂等
         if (this.lastFrameId == CaptureEngine.frameId) {
-            PerformanceMonitor.End("MainLogic")   ; 提前退出也需结束计时
+            PerformanceMonitor.End("LogEngine-MainLogic")   ; 提前退出也需结束计时
             return
         }
         this.lastFrameId := CaptureEngine.frameId
 
         try {
             ; ---------- 1. 开始帧 ----------
-            PerformanceMonitor.Start("BeginFrame")
             this.g_Mutex.BeginFrame()
-            PerformanceMonitor.End("BeginFrame")
 
             ; ---------- 2. 基础 Buff 查询 ----------
-            PerformanceMonitor.Start("BuffQuery")
             hasSoulFlareBuff := StateManager._buffState.Get("SoulFlare", false)
             hasLeechBuff      := StateManager._buffState.Get("Leech", false)
-            PerformanceMonitor.End("BuffQuery")
 
             ; ---------- 3. 睡眠检查 ----------
-            PerformanceMonitor.Start("IsInSleep")
             if (this.g_Mutex.IsInSleep()) {
                 if (this._HandleSleepState()) {
-                    PerformanceMonitor.End("IsInSleep")
                     return
                 }
             }
-            PerformanceMonitor.End("IsInSleep")
 
             ; ---------- 4. Action5 : Open 开门 ----------
-            PerformanceMonitor.Start("OpenCondition")
             OpenReady := StateManager._skillState.Get("Open_R", false)
             criticalDragoncallReady := this.g_enablePriorityUseDragoncall ? StateManager._skillState.Get("Critical_Dragoncall", false) : false
             openDragonState := this.g_limitationOpen
@@ -90,31 +82,24 @@ class LogicEngine extends LogicRunner {
                         && hasLeechBuff 
                         && openDragonState 
                         && (bombardmentWindow && leechWindow)
-            PerformanceMonitor.End("OpenCondition")
 
             if (this.g_Mutex.CanExecute(5) && open_condition) {
-                PerformanceMonitor.Start("SendOpen")
-                this.SendKey("3")
+                this.SendKey("3","LogEngine-SendOpen")
                 this.g_Mutex.OnExecuted(5)
                 this.lastUsedOpen := HiResTimer.GetTick()
-                PerformanceMonitor.End("SendOpen")
                 return
             }
 
             ; ---------- 5. Action2 : Soulflare 超神 ----------
-            PerformanceMonitor.Start("SoulflareCondition")
             
             soulFlareReady := this.g_AutoSoulFlare && StateManager._skillState.Get("SoulFlare", false)
             delaySoulFlare := this.g_Gold_Leech
-            PerformanceMonitor.End("SoulflareCondition")
 
 
             if (this.g_Mutex.CanExecute(2) && soulFlareReady) {
                 if (delaySoulFlare) {
                     if (this.g_Mutex.isSFirst && this.delayTab == 0) {
-                        PerformanceMonitor.Start("DelayTabSet")
                         this.delayTab := SetTimer(() => this.DelaySendTab(), -2000)
-                        PerformanceMonitor.End("DelayTabSet")
                     }
                 } else {
                     /**
@@ -148,20 +133,17 @@ class LogicEngine extends LogicRunner {
 
                     lastResult := soulFlareReady && LeechIsUsedOrExist
                     if(lastResult){
-                        PerformanceMonitor.Start("SendSoulflare")
                         this.DelaySendTab()
-                        PerformanceMonitor.End("SendSoulflare")
                     }
                 }
             }
 
             ; ---------- 6. Action1 : Dragoncall & Wingstorm ----------
-            PerformanceMonitor.Start("Action1")
             wingstormReady := this.g_Gold_Wingstorm
                 ? StateManager._skillState.Get("Gold_Wingstorm_R", false)
                 : StateManager._skillState.Get("Wingstorm_R", false)
             dragoncallReady := StateManager._skillState.Get("Dragoncall_R", false)
-            criticalDragoncallReady := criticalDragoncallReady := this.g_enablePriorityUseDragoncall ? StateManager._skillState.Get("Critical_Dragoncall", false) : false
+            criticalDragoncallReady := this.g_enablePriorityUseDragoncall ? StateManager._skillState.Get("Critical_Dragoncall", false) : false
 
             local D_Limit := 300
             local LeechAfterBanWingstorm := 800 + 350
@@ -174,25 +156,19 @@ class LogicEngine extends LogicRunner {
 
             if (this.g_Mutex.CanExecute(1)) {
                 if (dragoncallReady) {
-                    PerformanceMonitor.Start("SendDragoncall")
-                    this.SendKey("4")
+                    this.SendKey("4","LogEngine-SendDragoncall")
                     this.g_Mutex.OnExecuted(1)
-                    this.writeLogEvent("4", HiResTimer.GetTick())
+                    ; this.writeLogEvent("4", HiResTimer.GetTick())
                     lastUsedD := HiResTimer.GetTick()
-                    PerformanceMonitor.End("SendDragoncall")
                 } else if (wingstormReady && allow_use_W) {
-                    PerformanceMonitor.Start("SendWingstorm")
-                    this.SendKey("v")
+                    this.SendKey("v","LogEngine-SendWingstorm")
                     this.g_Mutex.OnExecuted(1)
-                    this.writeLogEvent("v", HiResTimer.GetTick())
+                    ; this.writeLogEvent("v", HiResTimer.GetTick())
                     lastUsedW := HiResTimer.GetTick()
-                    PerformanceMonitor.End("SendWingstorm")
                 }
             }
-            PerformanceMonitor.End("Action1")
 
             ; ---------- 7. Action3 : Leech 掠夺 ----------
-            PerformanceMonitor.Start("Action3")
             preLeech := StateManager._skillState.Get("Leech_Dark_L", false) || StateManager._skillState.Get("Leech_L", false)
             LeechReady := StateManager._skillState.Get("Leech_R", false)
             leech_condition := this.g_limitationLeech
@@ -218,62 +194,54 @@ class LogicEngine extends LogicRunner {
 
                 if (allowLeech) {
                     if (LeechReady) {
-                        PerformanceMonitor.Start("SendLeech")
-                        this.SendKey("f")
+                        this.SendKey("f","LogEngine-SendLeech")
                         this.lastUsedLeech := HiResTimer.GetTick()
                         this.g_Mutex.OnExecuted(3)
-                        this.writeLogEvent("f", HiResTimer.GetTick())
-                        PerformanceMonitor.End("SendLeech")
+                        ; this.writeLogEvent("f", HiResTimer.GetTick())
                     } else {
-                        PerformanceMonitor.End("Action3")
                         return
                     }
                 }
             }
-            PerformanceMonitor.End("Action3")
 
             ; ---------- 8. Action4 : Mantra/Rupture/Bombardment ----------
-            PerformanceMonitor.Start("Action4")
-            if (this.g_Mutex.CanExecute(4)) {
+            local LeechAfterBanAction4 := 800
+            preLeech := StateManager._skillState.Get("Leech_Dark_L", false) || StateManager._skillState.Get("Leech_L", false)
+            if (this.g_Mutex.CanExecute(4) && LeechAfterBanAction4 <= HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) && !preLeech) {
                 MantraReady := CaptureEngine.g_CurrentFocus <= (hasSoulFlareBuff ? 2 : (hasLeechBuff ? 3 : 4)) 
                             && StateManager._skillState.Get("Mantra_L", false)
                 RuptureReady := CaptureEngine.g_CurrentFocus <= (hasSoulFlareBuff ? 1 : (hasLeechBuff ? 4 : 4)) 
                             && StateManager._skillState.Get("Rupture_L", false)
                 BombardmentReady := StateManager._skillState.Get("RealBombardment_R", false) 
                                 || StateManager._skillState.Get("Bombardment_R", false)
+                ; BombardmentReady := 490 <= HiResTimer.DeltaUs(lastUsedBombardment, HiResTimer.GetTick())
+
                 BombardmentReady := true
 
                 if (MantraReady) {
-                    PerformanceMonitor.Start("SendMantra")
-                    this.SendKey("r")
+                    this.SendKey("r","LogEngine-SendMantra")
                     this.g_Mutex.OnExecuted(4)
-                    this.writeLogEvent("r", HiResTimer.GetTick())
-                    PerformanceMonitor.End("SendMantra")
+                    ; this.writeLogEvent("r", HiResTimer.GetTick())
                 } else if (RuptureReady) {
-                    PerformanceMonitor.Start("SendRupture")
-                    this.SendKey("f")
+                    this.SendKey("f","LogEngine-SendRupture")
                     this.g_Mutex.OnExecuted(4)
-                    this.writeLogEvent("f", HiResTimer.GetTick())
-                    PerformanceMonitor.End("SendRupture")
+                    ; this.writeLogEvent("f", HiResTimer.GetTick())
                 } else if (BombardmentReady) { 
-                    PerformanceMonitor.Start("SendBombardment")
-                    this.SendKey("t")
+                    this.SendKey("t","LogEngine-SendBombardment")
                     this.g_Mutex.OnExecuted(4)
                     lastUsedBombardment := HiResTimer.GetTick()
-                    this.writeLogEvent("t", lastUsedBombardment)
-                    PerformanceMonitor.End("SendBombardment")
+                    ; this.writeLogEvent("t", lastUsedBombardment)
                 }
             }
-            PerformanceMonitor.End("Action4")
 
         } finally {
             this.g_LastLogicTimeUs := HiResTimer.DeltaMs(start, HiResTimer.GetTick())
-            PerformanceMonitor.End("MainLogic")
+            PerformanceMonitor.End("LogEngine-MainLogic")
         }
     }
 
     static _HandleSleepState() {
-        PerformanceMonitor.Start("HandleSleep")
+        PerformanceMonitor.Start("LogEngine-HandleSleep")
         try{
             if (this.g_Mutex.CurrentSleepType() == 1) { ; Open Sleep
                 OpenReady := StateManager._skillState.Get("Open_R", false)
@@ -344,17 +312,18 @@ class LogicEngine extends LogicRunner {
                 return false
             }
         }finally{
-            PerformanceMonitor.End("HandleSleep")
+            PerformanceMonitor.End("LogEngine-HandleSleep")
         }
     }
 
     ; 辅助方法
     static DelaySendTab() {
         if (this.g_Mutex.CanExecute(2) && this.g_AutoSoulFlare && StateManager._skillState.Get("SoulFlare", false)) {
-            this.SendKey("e")
-            this.SendKey("{tab}")
+            this.SendKey("e","LogEngine-SendSoulflare-E")
+            ; this.writeLogEvent("e", HiResTimer.GetTick())
+            this.SendKey("{tab}", "LogEngine-SendSoulflare-TAB")
             this.g_Mutex.OnExecuted(2)
-            this.writeLogEvent("tab", HiResTimer.GetTick())
+            ; this.writeLogEvent("tab", HiResTimer.GetTick())
         }
         this.g_Mutex.isSFirst := false
         this.delayTab := 0
