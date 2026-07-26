@@ -10,6 +10,7 @@ class ActionMutex {
 
     ; ----- 睡眠队列基础操作 -----
     SetSleep(type, durationMs) {
+        PerformanceMonitor.Start("ActionMutex-SetSleep")
         expire := HiResTimer.AddMs(durationMs)
         inserted := false
         for i, item in this.sleepQueue {
@@ -21,6 +22,7 @@ class ActionMutex {
         }
         if (!inserted)
             this.sleepQueue.Push({type: type, expire: expire})
+        PerformanceMonitor.End("ActionMutex-SetSleep")
     }
 
     ReleaseSleep(type?) {

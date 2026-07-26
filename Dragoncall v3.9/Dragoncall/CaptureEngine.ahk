@@ -15,7 +15,6 @@ class CaptureEngine extends CaptureClient {
     static skillNames := [], skillIdx := Map()
     static buffNames := [], buffIdx := Map()
     static DetectTimer := 0
-    static RealtimeMode := 0
 
     static Start() {
         ; 直接调用基类的静态方法
@@ -29,12 +28,12 @@ class CaptureEngine extends CaptureClient {
         this.buffIdx    := idx.buffIdx
 
         ; 启动定时器
-        interval := (this.RealtimeMode ? 1 : DETECT_INTERVAL)   ; 实时=1ms
+        interval := DETECT_INTERVAL   
         this.DetectTimer := SetTimer(ObjBindMethod(CaptureEngine, "UpdateState"), interval)
     }
 
     static UpdateState() {
-        PerformanceMonitor.Start("UpdateState")
+        PerformanceMonitor.Start("CaptureEngine-UpdateState")
         local frameData := CaptureClient.ReadFrame()
         if !IsObject(frameData)
             return
@@ -61,7 +60,7 @@ class CaptureEngine extends CaptureClient {
             logicOffStart := 0
         }
         this.g_LastUpdateStateTime := HiResTimer.DeltaMs(start, HiResTimer.GetTick())
-        PerformanceMonitor.End("UpdateState")
+        PerformanceMonitor.End("CaptureEngine-UpdateState")
     }
 
     static Cleanup() {
