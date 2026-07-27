@@ -5,7 +5,7 @@ class InputQueue {
     static engine       := 0
 
     ; ---------- 发送间隔控制 ----------
-    static minIntervalUs := 1*1000   ; 同一按键最小发送间隔 10 毫秒（微秒）
+    static minIntervalUs := 5*1000   ; 同一按键最小发送间隔 10 毫秒（微秒）
     static lastSendTicks := Map()    ; 每个按键的上次发送时刻 (QPC)
 
     static Init(provider := 0) {
