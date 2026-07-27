@@ -72,7 +72,7 @@ class KeyLogger {
             injected := (flags & this.LLKHF_INJECTED) != 0
 
             if (!ONLY_INJECTED || injected) {
-                tick    := HiResTimer.GetTick()
+                tick    := HiResTimer.Now()
                 keyName := GetKeyName("vk" Format("{:X}", vkCode))
                 entry   := Format("{1}`t{2}`t{3}`t{4}`n", tick, vkCode, keyName,
                                   injected ? "Injected" : "Physical")
