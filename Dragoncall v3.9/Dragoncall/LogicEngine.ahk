@@ -207,7 +207,7 @@ class LogicEngine extends LogicRunner {
             ; ---------- 8. Action4 : Mantra/Rupture/Bombardment ----------
             local LeechAfterBanAction4 := 800
             preLeech := StateManager._skillState.Get("Leech_Dark_L", false) || StateManager._skillState.Get("Leech_L", false)
-            if (this.g_Mutex.CanExecute(4) && LeechAfterBanAction4 <= HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) && !preLeech) {
+            if (this.g_Mutex.CanExecute(4) && LeechAfterBanAction4 <= HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) && (!preLeech || hasSoulFlareBuff)) {
                 MantraReady := CaptureEngine.g_CurrentFocus <= (hasSoulFlareBuff ? 2 : (hasLeechBuff ? 3 : 4)) 
                             && StateManager._skillState.Get("Mantra_L", false)
                 RuptureReady := CaptureEngine.g_CurrentFocus <= (hasSoulFlareBuff ? 1 : (hasLeechBuff ? 4 : 4)) 
@@ -251,37 +251,37 @@ class LogicEngine extends LogicRunner {
                     MaxOvertime := Floor(this.g_Mutex.openSleepTime * (1/3))
                     if (MaxOvertime <= HiResTimer.DeltaMs(expire, HiResTimer.GetTick())) {
                         msg := "[Open-Ready] Overtime! curOvertime: " HiResTimer.DeltaMs(expire, HiResTimer.GetTick()) " curtimestamp:" HiResTimer.GetTick()
-                        KeyLogger.WriteLog(HiResTimer.GetTick(), msg)
+                        KeyLogger.WriteLog(HiResTimer.Now(), msg)
                         this.lastUsedOpen := -1 ; 物理使用失败,移除限制
                         this.g_Mutex.ReleaseSleep(1)           ; 只释放 Open 睡眠
                         OutputDebug "Open多帧判断均在亮起,说明没有物理按下," HiResTimer.Now()
                         return false
                     } else if (this.g_Mutex.IsInSleep()) {
                         msg := "[Open-Ready] Sleeping! curtimestamp:" HiResTimer.GetTick()
-                        KeyLogger.WriteLog(HiResTimer.GetTick(), msg)
+                        KeyLogger.WriteLog(HiResTimer.Now(), msg)
                         OutputDebug "Open多帧判断是否亮起中,正在sleep," HiResTimer.Now()
                         return true
                     }
                     msg := "[Open-Ready] Error! curtimestamp:" HiResTimer.GetTick()
-                    KeyLogger.WriteLog(HiResTimer.GetTick(), msg)
+                    KeyLogger.WriteLog(HiResTimer.Now(), msg)
                     OutputDebug "Open多帧判断异常错误!!!!," HiResTimer.Now()
                     return false
                 } else if (openBlackReady) {
                     if (this.g_Mutex.IsInSleep()) {
                         msg := "[Open-Blank] Sleeping! curtimestamp:" HiResTimer.GetTick()
-                        KeyLogger.WriteLog(HiResTimer.GetTick(), msg)
+                        KeyLogger.WriteLog(HiResTimer.Now(), msg)
                         OutputDebug "Open物理按下/GCD空转中,正在sleep," HiResTimer.Now()
                         return true
                     } else {
                         msg := "[Open-Ready] Don't Sleep!Releasing! curtimestamp:" HiResTimer.GetTick()
-                        KeyLogger.WriteLog(HiResTimer.GetTick(), msg)
+                        KeyLogger.WriteLog(HiResTimer.Now(), msg)
                         this.g_Mutex.ReleaseSleep(1)           ; 只释放 Open 睡眠
                         OutputDebug "Open物理按下/GCD空转中,不处于Sleep,释放Sleep条件," HiResTimer.Now()
                         return false
                     }
                 } else {
                     msg := "[Open] OpenReadyNotExist And OpenBlankNotExist Releasing! curtimestamp:" HiResTimer.GetTick()
-                    KeyLogger.WriteLog(HiResTimer.GetTick(), msg)
+                    KeyLogger.WriteLog(HiResTimer.Now(), msg)
                     OutputDebug "均读取不到Open亮起/暗淡状态!!!!," HiResTimer.Now()
                     ; 不释放睡眠，保持阻塞等待下一帧
                     this.lastUsedOpen := -1 ; 异常状态,移除限制
@@ -289,24 +289,24 @@ class LogicEngine extends LogicRunner {
                 }
             } else if (this.g_Mutex.CurrentSleepType() == 2) { ; Soulflare Sleep
                 msg := "[Soulflare] Soulflare Sleep! curtimestamp:" HiResTimer.GetTick()
-                KeyLogger.WriteLog(HiResTimer.GetTick(), msg)
+                KeyLogger.WriteLog(HiResTimer.Now(), msg)
                 OutputDebug "超神睡眠状态中," HiResTimer.Now()
                 return true
             } else if (this.g_Mutex.CurrentSleepType() == 3) { ; Leech Sleep
                 msg := "[Leech] Leech Sleep! curtimestamp:" HiResTimer.GetTick()
-                KeyLogger.WriteLog(HiResTimer.GetTick(), msg)
+                KeyLogger.WriteLog(HiResTimer.Now(), msg)
                 OutputDebug "掠夺睡眠状态中," HiResTimer.Now()
                 return true
             } 
             else if(this.g_Mutex.CurrentSleepType() == 5){ ; X Sleep
                 msg := "[X] X Sleep! curtimestamp:" HiResTimer.GetTick()
-                KeyLogger.WriteLog(HiResTimer.GetTick(), msg)
+                KeyLogger.WriteLog(HiResTimer.Now(), msg)
                 OutputDebug "X睡眠状态中," HiResTimer.Now()
                 return true
             }
             else {
                 msg := "[Unknown] Unknown sleep type! Release Data! curtimestamp:" HiResTimer.GetTick()
-                KeyLogger.WriteLog(HiResTimer.GetTick(), msg)
+                KeyLogger.WriteLog(HiResTimer.Now(), msg)
                 this.g_Mutex.ReleaseSleep()                   ; 未知类型直接清空，确保安全
                 OutputDebug "未知异常," HiResTimer.Now()
                 return false
@@ -319,7 +319,8 @@ class LogicEngine extends LogicRunner {
     ; 辅助方法
     static DelaySendTab() {
         if (this.g_Mutex.CanExecute(2) && this.g_AutoSoulFlare && StateManager._skillState.Get("SoulFlare", false)) {
-            this.SendKey("e","LogEngine-SendSoulflare-E")
+            if(!this.g_Mutex.isSFirst)
+                this.SendKey("e","LogEngine-SendSoulflare-E")
             ; this.writeLogEvent("e", HiResTimer.GetTick())
             this.SendKey("{tab}", "LogEngine-SendSoulflare-TAB")
             this.g_Mutex.OnExecuted(2)
