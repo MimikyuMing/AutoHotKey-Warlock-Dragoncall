@@ -47,7 +47,7 @@ ShowSettingsGUI(*) {
     _settingsGui.Add("Text", "w300 h2 0x7")             ; 水平分隔线
 
     _settingsGui.Add("Checkbox", "vRealtimeMode", "实时模式（直接从共享内存读取技能状态）")
-        .Value := StateManager.realtimeMode
+        .Value := CaptureEngine.RealtimeMode
     _settingsGui["RealtimeMode"].OnEvent("Click", SaveSettingImmediate)
 
     _settingsGui.Add("Checkbox", "vPerformanceMonitor", "性能检测（退出时输出耗时报告）")
@@ -86,20 +86,32 @@ SaveSettingImmediate(*) {
 }
 
 SaveSettingsToFile() {
-    if !FileExist(A_AppData "\Dragoncall\Dragoncall-Config.ini") {
+    static configPath := A_AppData "\Dragoncall\Dragoncall-Config.ini"
+    
+    ; 如果目标目录不存在，创建它
+    if !FileExist(A_AppData "\Dragoncall") {
         DirCreate(A_AppData "\Dragoncall")
-        FileCopy INI, A_AppData "\Dragoncall\Dragoncall-Config.ini", 1
     }
-    IniWrite(LogicEngine.g_Gold_Wingstorm, A_AppData "\Dragoncall\Dragoncall-Config.ini", "Settings", "Gold_Wingstorm")
-    IniWrite(LogicEngine.g_Gold_Open, A_AppData "\Dragoncall\Dragoncall-Config.ini", "Settings", "Gold_Open")
-    IniWrite(LogicEngine.g_AutoSoulFlare, A_AppData "\Dragoncall\Dragoncall-Config.ini", "Settings", "AutoSoulFlare")
-    IniWrite(LogicEngine.g_isUseLeechHasLeechBuff, A_AppData "\Dragoncall\Dragoncall-Config.ini", "Settings", "isUseLeechHasLeechBuff")
-    IniWrite(LogicEngine.g_Gold_Leech, A_AppData "\Dragoncall\Dragoncall-Config.ini", "Settings", "Gold_Leech")
-    IniWrite(LogicEngine.g_limitationOpen, A_AppData "\Dragoncall\Dragoncall-Config.ini", "Settings", "LimitationOpen")
-    IniWrite(LogicEngine.g_limitationLeech, A_AppData "\Dragoncall\Dragoncall-Config.ini", "Settings", "LimitationLeech")
-    IniWrite(StateManager.realtimeMode, A_AppData "\Dragoncall\config.ini", "Settings", "RealtimeMode")
-    IniWrite(PerformanceMonitor.enabled, A_AppData "\Dragoncall\config.ini", "Settings", "PerformanceMonitor")
-    IniWrite(PerformanceMonitor.monitorCpu, A_AppData "\Dragoncall\config.ini", "Settings", "MonitorCpu")
-    IniWrite(PerformanceMonitor.monitorMem, A_AppData "\Dragoncall\config.ini", "Settings", "MonitorMemory")
-    IniWrite(LogicEngine.g_enablePriorityUseDragoncall, A_AppData "\Dragoncall\config.ini", "Settings", "EnablePriorityUseDragoncall")
+    
+    ; 如果目标配置文件不存在，从临时文件复制（如果存在）或创建空文件
+    if !FileExist(configPath) {
+        if FileExist(INI)  ; INI 是全局变量，可能指向 A_Temp 下的文件
+            FileCopy INI, configPath, 1
+        else
+            FileAppend "", configPath   ; 创建空文件
+    }
+    
+    ; 统一写入所有设置到 configPath
+    IniWrite(LogicEngine.g_Gold_Wingstorm, configPath, "Settings", "Gold_Wingstorm")
+    IniWrite(LogicEngine.g_Gold_Open, configPath, "Settings", "Gold_Open")
+    IniWrite(LogicEngine.g_AutoSoulFlare, configPath, "Settings", "AutoSoulFlare")
+    IniWrite(LogicEngine.g_isUseLeechHasLeechBuff, configPath, "Settings", "isUseLeechHasLeechBuff")
+    IniWrite(LogicEngine.g_Gold_Leech, configPath, "Settings", "Gold_Leech")
+    IniWrite(LogicEngine.g_limitationOpen, configPath, "Settings", "LimitationOpen")
+    IniWrite(LogicEngine.g_limitationLeech, configPath, "Settings", "LimitationLeech")
+    IniWrite(StateManager.realtimeMode, configPath, "Settings", "RealtimeMode")
+    IniWrite(PerformanceMonitor.enabled, configPath, "Settings", "PerformanceMonitor")
+    IniWrite(PerformanceMonitor.monitorCpu, configPath, "Settings", "MonitorCpu")
+    IniWrite(PerformanceMonitor.monitorMem, configPath, "Settings", "MonitorMemory")
+    IniWrite(LogicEngine.g_enablePriorityUseDragoncall, configPath, "Settings", "EnablePriorityUseDragoncall")
 }
