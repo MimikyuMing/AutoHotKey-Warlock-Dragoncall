@@ -60,12 +60,13 @@ class LogicRunner {
     }
 
     static SendKey(key, str){
+        params:= Format("Keyboard is {} , Logic is {}", key, str)
         PerformanceMonitor.Start(str)
         if(this.isUsedInputQueue){
             InputQueue.Push(key)
         }else{
             Send key
         }
-        PerformanceMonitor.End(str)
+        PerformanceMonitor.End(str, params)
     }
 }
