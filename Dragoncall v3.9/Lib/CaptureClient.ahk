@@ -10,6 +10,8 @@ class CaptureClient {
     static hMap  := 0
     static pStopCapture := 0
 
+    static isValid := false
+
 
     ; 帧缓存（静态）
     static cachedFrameId := -1
@@ -17,36 +19,35 @@ class CaptureClient {
 
     static RealtimeMode := 0
 
-    ; 获取当前帧数据（同一帧内只读取一次共享内存）
-    static GetCachedFrame() {
-        ; 每次都重新读帧 ID（读一个 UInt 开销极低）
-        frameId := NumGet(this.pView, 0, "UInt")
-        if (frameId != this.cachedFrameId) {
-            ; 新帧，完整读取并缓存
-            this.cachedFrameData := this.ReadFrame()
-            this.cachedFrameId := frameId
-        }
-        return this.cachedFrameData
-    }
+
 
     static Start(dllPath, iniPath, mapName := "Local\DragoncallState") {
         this.hDll := DllCall("LoadLibrary", "Str", dllPath, "Ptr")
         if !this.hDll
-            throw Error("无法加载 " dllPath)
+            throw Error("无法加载 " . dllPath)
 
+        ; DLL 自定义导出函数保持 "Str"
         res := DllCall("CaptureLogic.dll\StartCapture", "Str", iniPath, "CDecl Int")
-        if this.hDll
-            this.pStopCapture := DllCall("GetProcAddress", "Ptr", this.hDll, "AStr", "StopCapture", "Ptr")
-        if !res
+        if !res {
+            DllCall("FreeLibrary", "Ptr", this.hDll)
             throw Error("StartCapture 失败")
+        }
 
-        this.hMap := DllCall("OpenFileMapping", "UInt", 4, "Int", 0, "Str", mapName)
-        if !this.hMap
-            throw Error("共享内存打开失败")
+        this.pStopCapture := DllCall("GetProcAddress", "Ptr", this.hDll, "AStr", "StopCapture", "Ptr")
+
+        this.hMap := DllCall("OpenFileMapping", "UInt", 4, "Int", 0, "WStr", mapName)
+        if !this.hMap {
+            DllCall("FreeLibrary", "Ptr", this.hDll)
+            throw Error("OpenFileMapping 失败")
+        }
 
         this.pView := DllCall("MapViewOfFile", "Ptr", this.hMap, "UInt", 4, "UInt", 0, "UInt", 0, "UInt", 0)
-        if !this.pView
-            throw Error("映射共享内存失败")
+        if !this.pView {
+            DllCall("CloseHandle", "Ptr", this.hMap)
+            DllCall("FreeLibrary", "Ptr", this.hDll)
+            throw Error("MapViewOfFile 失败")
+        }
+        this.isValid := true
     }
 
     static Cleanup() {
@@ -110,21 +111,33 @@ class CaptureClient {
     static ReadFrame() {
         if !this.pView
             return false
+
         local frameId := NumGet(this.pView, 0, "UInt")
         local focus   := NumGet(this.pView, 12, "Int")
         local sc      := NumGet(this.pView, 16, "UInt")
         local bc      := NumGet(this.pView, 20, "UInt")
 
+        ; 如果捕获线程还没写入第一帧，所有值可能为 0
+        if (frameId == 0 && sc == 0 && bc == 0)
+            return false
+
+        ; 限制最大数量
+        if (sc > 128 || bc > 128)
+            return false
+
+        ; 检查总大小是否超出共享内存
+        if (24 + sc + bc + 12 > 4096)
+            return false
+
         local skillBytes := Buffer(sc, 0)
-        if sc > 0
+        if (sc > 0)
             DllCall("RtlMoveMemory", "Ptr", skillBytes, "Ptr", this.pView + 24, "UPtr", sc)
 
         local buffBytes := Buffer(bc, 0)
-        if bc > 0
+        if (bc > 0)
             DllCall("RtlMoveMemory", "Ptr", buffBytes, "Ptr", this.pView + 24 + sc, "UPtr", bc)
 
-        return {frameId: frameId, focus: focus,
-                skillBytes: skillBytes, buffBytes: buffBytes}
+        return {frameId: frameId, focus: focus, skillBytes: skillBytes, buffBytes: buffBytes}
     }
 
     static SyncStates(frameData, skillIdx, buffIdx) {
@@ -140,5 +153,22 @@ class CaptureClient {
             StateManager._buffState[name] := state
         }
         StateManager._focusState.currentLevel := frameData.focus
+    }
+
+
+        ; 获取当前帧数据（同一帧内只读取一次共享内存）
+    static GetCachedFrame() {
+
+        if !this.isValid || !this.pView
+            return false
+
+        ; 安全读取帧 ID
+        frameId := NumGet(this.pView, 0, "UInt")
+        if (frameId != this.cachedFrameId) {
+            this.cachedFrameData := this.ReadFrame()
+            this.cachedFrameId := frameId
+        }
+        return this.cachedFrameData
+
     }
 }
