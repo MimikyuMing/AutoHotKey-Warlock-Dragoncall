@@ -36,5 +36,15 @@ F11:: {
     LeechReady := StateManager._skillState.Get("Leech_R", false)
     if(LeechReady){
         LogicEngine.lastUsedLeech := HiResTimer.GetTick()
+        LogicEngine.g_Mutex.OnExecuted(3)
+    }
+}
+
+
+~$Tab::{
+    soulFlareReady := StateManager._skillState.Get("SoulFlare", false)
+    if(soulFlareReady){
+        LogicEngine.g_Mutex.OnExecuted(2)
+        SetTimer(() => (LogicEngine.g_Mutex.isSFirst := false), -1000)
     }
 }
