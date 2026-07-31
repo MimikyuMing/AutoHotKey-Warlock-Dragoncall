@@ -20,13 +20,11 @@ class CaptureEngine extends CaptureClient {
         ; 直接调用基类的静态方法
         CaptureClient.Start(A_Temp "\CaptureLogic.dll", INI)
 
-        ; 构建名称索引
         local idx := CaptureClient.BuildNameIndex()
         this.skillNames := idx.skillNames
         this.skillIdx   := idx.skillIdx
         this.buffNames  := idx.buffNames
         this.buffIdx    := idx.buffIdx
-
         ; 启动定时器
         interval := DETECT_INTERVAL   
         this.DetectTimer := SetTimer(ObjBindMethod(CaptureEngine, "UpdateState"), interval)
@@ -64,6 +62,13 @@ class CaptureEngine extends CaptureClient {
     }
 
     static Cleanup() {
+        ; 1. 停止定时器，防止回调访问已释放的资源
+        if this.DetectTimer {
+            SetTimer(this.DetectTimer, 0)
+            this.DetectTimer := 0
+        }
+        ; 2. 设置无效标志（可选，但强烈建议）
+        CaptureClient.isValid := false
         CaptureClient.Cleanup()
     }
 }
