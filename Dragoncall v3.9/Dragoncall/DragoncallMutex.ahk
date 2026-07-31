@@ -14,6 +14,27 @@ class DragoncallMutex extends ActionMutex {
     leechSleepTime     := 800
     xSleepTime         := 800
 
+    sleepDurationsMap := Map()
+
+
+    static Init(){
+        this.sleepMap.Set(1, "Open")
+        this.sleepMap.Set(2, "SoulFlare")
+        this.sleepMap.Set(3, "Leech")
+        this.sleepMap.Set(5, "X")
+    }
+
+
+    GetSleepDurations(){
+        if(this.sleepDurationsMap.Capacity != 0)
+            return this.sleepDurationsMap
+        this.sleepDurationsMap.Set(1, this.openSleepTime)
+        this.sleepDurationsMap.Set(2, this.soulflareSleepTime)
+        this.sleepDurationsMap.Set(3, this.leechSleepTime)
+        this.sleepDurationsMap.Set(5, this.xSleepTime)
+        return this.sleepDurationsMap
+    }
+
     ; ----- 实现抽象接口 -----
     BeginFrame() {
         this.thisFrameAct := 0
@@ -24,27 +45,34 @@ class DragoncallMutex extends ActionMutex {
         for item in this.sleepQueue {
             sType := item.type
             expire := item.expire
-            switch sType {
-                case 1: return false
-                case 2:
-                    if (this.isSFirst) {
-                        if (action == 3 && HiResTimer.GetTick() < HiResTimer.SubMs(700, expire))
-                            return false
-                        if (action != 1 && action != 3)
-                            return false
-                    } else {
+
+
+            if(sType == 1){ ; open
+                return false
+            }else if(sType == 2){ ; soulflare
+                if(action == 1){
+                    return true
+                } else if(action == 2){ ; 这里onexecuted对重复的操作进行合并操作，取两者之差的70%
+                    return true
+                } else if(action == 3){
+                    if(HiResTimer.GetTick() >= HiResTimer.SubMs(800, expire)){
                         return true
+                    }else {
+                        return false
                     }
-                case 3:
-                    if (action != 2)
-                        return false
-                case 4:
-                    if (action != 2)
-                        return true
-                    if (action == 2 && this.isSFirst)
-                        return false
-                case 5: return false
-                default: return false
+                } else if(action == 4 || action == 5){
+                    return false
+                } else {
+                    return false
+                }
+            } else if(sType == 3){
+                if(action == 2){
+                    return true
+                }else{
+                    return false
+                }
+            } else if(sType == 5){
+                return false
             }
         }
 
@@ -81,17 +109,18 @@ class DragoncallMutex extends ActionMutex {
 
     OnExecuted(action) {
         this.thisFrameAct := action
-        if (action == 2 && this.isSFirst) {
-            this.isSFirst := false
+
+        if (action == 2) {
             this.SetSleep(2, this.soulflareSleepTime * 0.999)
         } else if (action == 3) {
             this.SetSleep(3, this.leechSleepTime * 0.90)
         } else if (action == 5) {
             this.SetSleep(1, this.openSleepTime)
-        } else if (this.isSFirst && (action != 1 || action != 3)) {
-            this.isSFirst := false
         }
     }
+
+
+
 
     ; ----- 特殊工具方法 -----
     MarkSFirst() {
