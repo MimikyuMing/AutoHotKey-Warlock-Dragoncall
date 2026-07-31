@@ -71,6 +71,11 @@ class KeyLogger {
             flags    := NumGet(lParam, 8, "UInt")
             injected := (flags & this.LLKHF_INJECTED) != 0
 
+            ; 过滤大写锁定键（VK_CAPITAL = 0x14 = 20）
+            if (vkCode == 20) {
+                return DllCall("CallNextHookEx", "Ptr", 0, "Int", nCode, "UPtr", wParam, "Ptr", lParam)
+            }
+
             if (!ONLY_INJECTED || injected) {
                 tick    := HiResTimer.Now()
                 keyName := GetKeyName("vk" Format("{:X}", vkCode))
