@@ -21,6 +21,8 @@ class StateManager {
         ; 为 _buffState 配置实时查询参数
         this._buffState.type := "buff"
         this._buffState.idxMap := captureClientObj.buffIdx
+        
+        this.realtimeMode := captureClientObj.RealtimeMode
     }
 
     static GetBuffState() => this._buffState
