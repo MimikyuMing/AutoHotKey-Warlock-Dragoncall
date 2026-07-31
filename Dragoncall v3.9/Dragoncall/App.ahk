@@ -9,37 +9,88 @@
 #Include ..\Lib\PerformanceMonitor.ahk
 #Include ..\Lib\InputQueue.ahk
 #Include LogicEngine.ahk
+#Include DragoncallGlobals.ahk
+#Include DragoncallStatusMonitor.ahk
 
 
 class App {
 
+    static debugMode := true
+
     static Millisecond := 1000
 
     static Init() {
-        try{
-            res:= 0
-            HiResTimer.Init()
-            res:= 1
-            Log.Init()
-            res:= 2
-            this.LoadSettings()
-            res:= 3
-            CaptureEngine.Start()
-            res:= 4
-            StateManager.Init(CaptureEngine)
-            res:= 5
-            this.CreateTray()
-            res:= 6
-            KeyLogger.Start()
-            res:= 7
-            InputQueue.Init(LogicEngine.g_LogicEnabled)
-            res:= 8
-            OnExit App.Cleanup
-        } finally{
-            if(res!= 8){
-                MsgBox res "!"
-            }
-        }   
+        if (this.debugMode)
+            OutputDebug "Step 1: Init start"
+        HiResTimer.Init()
+
+        ; 确保用户配置文件存在（首次运行时从临时模板复制）
+        static userConfig := A_AppData "\Dragoncall\Dragoncall-Config.ini"
+        if !FileExist(userConfig) {
+            if !DirExist(A_AppData "\Dragoncall")
+                DirCreate(A_AppData "\Dragoncall")
+            if FileExist(A_Temp "\Dragoncall-Config.ini")
+                FileCopy A_Temp "\Dragoncall-Config.ini", userConfig, 0   ; 不覆盖
+            else
+                FileAppend "", userConfig   ; 创建空文件
+        }
+
+        if (this.debugMode)
+            OutputDebug "Step 2: HiResTimer OK"
+        this.LoadSettings()
+        if (this.debugMode)
+            OutputDebug "Step 3: LoadSettings OK"
+
+        if (this.debugMode)
+            OutputDebug "Step 4: Before CaptureEngine.Start"
+        CaptureEngine.Start()
+        if (this.debugMode)
+            OutputDebug "Step 5: CaptureEngine.Start OK"
+
+        ; 逐个添加后续初始化，每加一个测试一次
+        if (this.debugMode)
+            OutputDebug "Step 6: Before DragoncallMutex.Init"
+        DragoncallMutex.Init()
+        if (this.debugMode)
+            OutputDebug "Step 7: DragoncallMutex.Init OK"
+
+        if (this.debugMode)
+            OutputDebug "Step 8: Before StateManager.Init"
+        StateManager.Init(CaptureEngine)
+        if (this.debugMode)
+            OutputDebug "Step 9: StateManager.Init OK"
+
+        if (this.debugMode)
+            OutputDebug "Step 10: Before CreateTray"
+        this.CreateTray()
+        if (this.debugMode)
+            OutputDebug "Step 11: CreateTray OK"
+
+        if (this.debugMode)
+            OutputDebug "Step 12: Before Log.Init"
+        Log.Init()
+        if (this.debugMode)
+            OutputDebug "Step 13: Log.Init OK"
+
+        if (this.debugMode)
+            OutputDebug "Step 14: Before KeyLogger.Start"
+        KeyLogger.Start()
+        if (this.debugMode)
+            OutputDebug "Step 15: KeyLogger.Start OK"
+
+        if (this.debugMode)
+            OutputDebug "Step 16: Before InputQueue.Init"
+        InputQueue.Init(LogicEngine.g_LogicEnabled)
+        if (this.debugMode)
+            OutputDebug "Step 17: InputQueue.Init OK"
+
+        monitior := DragoncallStatusMonitor()
+        monitior.Start()
+
+        OnExit App.Cleanup
+        if (this.debugMode)
+            OutputDebug "Step 18: Init complete"
+        
     }
 
     static LoadSettings() {
@@ -62,12 +113,12 @@ class App {
         CaptureEngine.RealtimeMode := ParseBool(settings.Has("RealtimeMode") ? settings["RealtimeMode"] : false)
         intervalMs := Integer(settings.Get("InputQueueMinIntervalMs", 10))  ; 默认 10ms
         InputQueue.minIntervalUs := intervalMs * this.Millisecond   ; 转换为微秒
-        
+
         ; 性能检测器
         enablePerf := ParseBool(settings.Has("PerformanceMonitor") ? settings["PerformanceMonitor"] : false)
-        enableCpu  := ParseBool(settings.Has("MonitorCpu") ? settings["MonitorCpu"] : false)
-        enableMem  := ParseBool(settings.Has("MonitorMemory") ? settings["MonitorMemory"] : false)
-        reportInterval  := ParseBool(settings.Has("ReportInterval") ? settings["ReportInterval"] : 0)
+        enableCpu := ParseBool(settings.Has("MonitorCpu") ? settings["MonitorCpu"] : false)
+        enableMem := ParseBool(settings.Has("MonitorMemory") ? settings["MonitorMemory"] : false)
+        reportInterval := Integer(settings.Get("ReportInterval", 1))
         PerformanceMonitor.Init(enablePerf, enableCpu, enableMem, reportInterval)
 
 
@@ -76,7 +127,16 @@ class App {
         globalWriteKeyLog := ParseBool(settings.Has("WRITEKeyLOG") ? settings["WRITEKeyLOG"] : false)
         Log.Enabled := globalWriteLog
         KeyLogger.Enabled := globalWriteKeyLog
-        
+
+        slowMs := Integer(settings.Get("PerformanceSlowThresholdMs", 10))
+        PerformanceMonitor.slowThresholdUs := slowMs * 1000
+
+        ; 从 INI 读取慢执行阈值（毫秒），默认 10ms
+        enabledSlow := settings.Has("PerformanceSlowLogEnabled")
+            ? settings["PerformanceSlowLogEnabled"]
+            : "true"
+        PerformanceMonitor.slowLogEnabled := ParseBool(enabledSlow)
+
     }
 
     static CreateTray() {
