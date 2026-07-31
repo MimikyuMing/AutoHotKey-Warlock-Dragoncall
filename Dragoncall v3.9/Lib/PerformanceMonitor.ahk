@@ -3,44 +3,50 @@
 #Include HiResTimer.ahk
 #Include KeyLogger.ahk
 
-; Lib\PerformanceMonitor.ahk
 class PerformanceMonitor {
     static enabled := false
     static records := Map()
     static timers  := Map()
 
-    ; ---------- 资源监控专用 ----------
-    static monitorCpu     := false        ; 是否监控 CPU
-    static monitorMem     := false        ; 是否监控内存
-    static sampleTimer    := 0            ; 采样定时器句柄
-    static cpuSamples     := []           ; 存储每次采样的 CPU 使用率 (%)
-    static memSamples     := []           ; 存储每次采样的内存 (MB)
-    static lastCpuKernel  := 0            ; 上次的 CPU 内核时间 (100ns)
-    static lastCpuUser    := 0            ; 上次的 CPU 用户时间
-    static lastSampleTick := 0            ; 上次采样的 QPC 时刻
+    static monitorCpu     := false
+    static monitorMem     := false
+    static sampleTimer    := 0
+    static cpuSamples     := []
+    static memSamples     := []
+    static lastCpuKernel  := 0
+    static lastCpuUser    := 0
+    static lastSampleTick := 0
 
-    static reportTimer := 0            ; 定期报告定时器
-    static reportInterval := 0         ; 分钟，0=关闭
+    static reportTimer    := 0
+    static reportInterval := 1   ; 分钟，0 = 禁用
+
+    static archiveQueue   := []  ; 存放每分钟的完整报告文本
+    static archiveRecords := []  ; 存放每分钟 records 的快照，用于归档报告
+
+    static slowThresholdUs := 10000   ; 慢执行阈值（微秒）
+    static slowLogEnabled  := true    ; 是否启用慢日志
+
     ; ---------- 初始化 ----------
-    static Init(enable, enableCpu := false, enableMem := false, reportInterval:= 0) {
+    static Init(enable, enableCpu := false, enableMem := false, reportInterval := 1) {
         this.enabled    := enable
         this.monitorCpu := enableCpu
         this.monitorMem := enableMem
         this.reportInterval := reportInterval
-        if this.enabled
+        if this.enabled {
             this.Reset()
-        ; 只有总开关和至少一个子开关为真时才启动采样
+            this.archiveQueue := []
+            this.archiveRecords := []
+        }
         if (this.enabled && (this.monitorCpu || this.monitorMem))
             this.StartResourceSampling()
         else
             this.StopResourceSampling()
-
-        ; 启动定期报告定时器（如果间隔>0）
         if (this.enabled && this.reportInterval > 0) {
-            this.reportTimer := SetTimer(ObjBindMethod(this, "LogSnapshot"), this.reportInterval * 1000 * 60)
+            this.reportTimer := SetTimer(ObjBindMethod(this, "FlushSnapshot"), this.reportInterval * 60000)
         }
     }
 
+    ; ---------- 资源采样（不变） ----------
     static StartResourceSampling() {
         this.lastCpuKernel  := 0
         this.lastCpuUser    := 0
@@ -53,36 +59,27 @@ class PerformanceMonitor {
             this.sampleTimer := 0
         }
     }
-
-    ; ---------- 定时采样系统资源 ----------
     static SampleResources() {
         hProcess := DllCall("GetCurrentProcess", "Ptr")
-
-        ; 内存：工作集大小 (字节 → MB)
         if this.monitorMem {
-            pmc := Buffer(72, 0)  ; PROCESS_MEMORY_COUNTERS_EX
+            pmc := Buffer(72, 0)
             NumPut("UInt", 72, pmc, 0)
             if DllCall("K32GetProcessMemoryInfo", "Ptr", hProcess, "Ptr", pmc, "UInt", 72) {
-                memBytes := NumGet(pmc, 16, "UInt64")  ; WorkingSetSize 偏移 16
+                memBytes := NumGet(pmc, 16, "UInt64")
                 memMb    := Round(memBytes / 1048576, 2)
                 this.memSamples.Push(memMb)
             }
         }
-
-        ; CPU：计算自上次采样以来的平均使用率
         if this.monitorCpu {
-            ; 获取进程时间（Kernel + User，单位 100ns）
-            ftCreation := 0, ftExit := 0
-            kernelTime := 0, userTime := 0
+            ftCreation := 0, ftExit := 0, kernelTime := 0, userTime := 0
             if DllCall("GetProcessTimes", "Ptr", hProcess,
                        "Int64*", &ftCreation, "Int64*", &ftExit,
                        "Int64*", &kernelTime, "Int64*", &userTime) {
                 totalCpu := kernelTime + userTime
-                if (this.lastCpuKernel > 0) {   ; 不是第一次采样
+                if (this.lastCpuKernel > 0) {
                     deltaCpu := totalCpu - (this.lastCpuKernel + this.lastCpuUser)
-                    deltaTime := (HiResTimer.GetTick() - this.lastSampleTick) / HiResTimer.freq * 1000.0   ; 实际经过的毫秒
+                    deltaTime := (HiResTimer.GetTick() - this.lastSampleTick) / HiResTimer.freq * 1000.0
                     if deltaTime > 0 {
-                        ; CPU 使用率 = (CPU时间增量 / 实际时间增量) * 100
                         cpuPercent := Min(100, Max(0, deltaCpu / 10000.0 / deltaTime * 100))
                         this.cpuSamples.Push(Round(cpuPercent, 1))
                     }
@@ -94,7 +91,7 @@ class PerformanceMonitor {
         }
     }
 
-    ; ---------- 原有方法不变 ----------
+    ; ---------- 重置临时统计（保留归档数据和资源基准） ----------
     static Reset() {
         this.records := Map()
         this.timers  := Map()
@@ -102,15 +99,16 @@ class PerformanceMonitor {
         this.memSamples := []
     }
 
+    ; ---------- 阶段计时 ----------
     static Start(stage) {
         if !this.enabled
             return
         this.timers[stage] := HiResTimer.GetTick()
     }
-    static End(stage) {
+    static End(stage, params := "") {
         if !this.enabled
             return
-        if !this.timers.Has(stage)    ; 避免因未配对 Start 而崩溃
+        if !this.timers.Has(stage)
             return
         startTick := this.timers.Delete(stage)
         elapsedUs := HiResTimer.DeltaUs(startTick, HiResTimer.GetTick())
@@ -123,12 +121,84 @@ class PerformanceMonitor {
             rec.min := elapsedUs
         if (elapsedUs > rec.max)
             rec.max := elapsedUs
+
+
+        ; 慢执行检测
+        if (this.slowLogEnabled && this.slowThresholdUs > 0 && elapsedUs >= this.slowThresholdUs) {
+            msg := Format("{} [SLOW] {} took {} us", HiResTimer.NowBeijing() , stage, elapsedUs)
+            if (params != "")
+                msg .= Format(", params: {}", params)
+            Log.Write(msg)
+        }
     }
 
+    ; ---------- 每分钟快照：生成报告 + 保存 records 快照 ----------
+    static FlushSnapshot() {
+        if !this.enabled
+            return
+        if this.records.Count == 0 && this.cpuSamples.Length == 0 && this.memSamples.Length == 0
+            return
 
-    static Report() {
+        dir := A_ScriptDir "\log\Performance"
+        if !DirExist(dir)
+            DirCreate(dir)
+        filePath := Format("{1}\{2}.txt", dir, Format("{:04d}-{:02d}-{:02d}", A_Year, A_Mon, A_DD))
+
+        ; 生成当前周期的完整表格（临时模式）
+        report := this.Report("temp")
+        this.archiveQueue.Push(report)
+
+        try FileAppend(report, filePath)
+
+        ; 深拷贝当前 records 作为快照保存
+        snapshot := this._DeepCopyRecords(this.records)
+        this.archiveRecords.Push(snapshot)
+
+        this.Reset()   ; 清空临时数据
+    }
+
+    ; 内部辅助：深拷贝 records Map（含子 Map）
+    static _DeepCopyRecords(src) {
+        copy := Map()
+        for stage, rec in src
+            copy[stage] := {count: rec.count, total: rec.total, min: rec.min, max: rec.max}
+        return copy
+    }
+
+    ; ---------- 退出时落盘 ----------
+    static DumpReport() {
+        if !this.enabled
+            return
+        this.FlushSnapshot()
+
+        dir := A_ScriptDir "\log\Performance\Archive"
+        if !DirExist(dir)
+            DirCreate(dir)
+        archivePath := Format("{}\archive_{}.txt", dir, Format("{:04d}-{:02d}-{:02d}", A_Year, A_Mon, A_DD))
+
+        s := ""
+        ; for i, report in this.archiveQueue {
+        ;     s .= report
+        ;     if i < this.archiveQueue.Length
+        ;         s .= "`n`n"
+        ; }
+        this.archiveQueue := []
+
+        ; 追加一份总归档报告（合并所有快照）
+        totalReport := this.Report("archive")
+        s .= "`n--- Total Archive Summary ---`n" . totalReport
+        s .= "`n[Exit]`n"
+
+        try FileAppend(s, archivePath)
+        OutputDebug "PerformanceMonitor: all reports archived."
+    }
+
+    ; ---------- 生成报告：支持 mode = "temp" | "archive" ----------
+    static Report(mode := "temp") {
         if !this.enabled
             return "PerformanceMonitor disabled"
+
+        records := (mode == "archive") ? this._MergeArchiveRecords() : this.records
 
         s := "`n========== Performance Report ==========`n"
         s .= "Generated at " HiResTimer.NowBeijing() "`n"
@@ -138,10 +208,9 @@ class PerformanceMonitor {
         s .= "+--------------------------------+--------+------------+------------+------------+`n"
 
         sorted := []
-        for stage, rec in this.records
+        for stage, rec in records
             sorted.Push({stage: stage, count: rec.count, avg: rec.total / rec.count, min: rec.min, max: rec.max})
-
-        ; 冒泡排序（降序）
+        ; 冒泡降序
         Loop sorted.Length - 1 {
             i := A_Index
             Loop sorted.Length - i {
@@ -186,40 +255,25 @@ class PerformanceMonitor {
         s .= "==========================================`n"
         return s
     }
-    static DumpReport() {
-        if !this.enabled
-            return
-        report := this.Report()
 
-        ; 按日期存放到 log\Performance 文件夹
-        dir := A_ScriptDir "\log\Performance"
-        if !DirExist(dir)
-            DirCreate(dir)
-        filePath := Format("{1}\{2}.txt", dir, Format("{:04d}-{:02d}-{:02d}", A_Year, A_Mon, A_DD))
-
-        FileAppend(report, filePath)
-        OutputDebug(report)
-        KeyLogger.WriteLog(HiResTimer.GetTick(), report)
-    }
-
-
-    ; 追加一条当前统计快照到文件（紧凑格式，每分钟一行）
-    static LogSnapshot() {
-        if !this.enabled
-            return
-
-        ; 确保目录存在
-        dir := A_ScriptDir "\log\Performance"
-        if !DirExist(dir)
-            DirCreate(dir)
-        filePath := Format("{1}\{2}.txt", dir, Format("{:04d}-{:02d}-{:02d}", A_Year, A_Mon, A_DD))
-
-        ; 收集各阶段的平均耗时
-        
-        report := this.Report()
-
-        ; 写入一行：时间戳 + 各阶段平均耗时
-        line := Format("[{1}] {2}`n", HiResTimer.NowBeijing(), report)
-        try FileAppend(line, filePath)
+    ; 合并所有归档快照为一个总 records
+    static _MergeArchiveRecords() {
+        merged := Map()
+        for snapshot in this.archiveRecords {
+            for stage, rec in snapshot {
+                if merged.Has(stage) {
+                    m := merged[stage]
+                    m.count += rec.count
+                    m.total += rec.total
+                    if rec.min < m.min
+                        m.min := rec.min
+                    if rec.max > m.max
+                        m.max := rec.max
+                } else {
+                    merged[stage] := {count: rec.count, total: rec.total, min: rec.min, max: rec.max}
+                }
+            }
+        }
+        return merged
     }
 }
