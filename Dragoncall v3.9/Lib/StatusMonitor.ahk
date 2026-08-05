@@ -1,71 +1,95 @@
 #Requires AutoHotkey v2.0
+; Lib\StatusMonitor.ahk
 
-; ============================================
-;  StatusMonitor 基类
-;  · 提供定时 ToolTip 刷新框架
-;  · 子类必须实现 Report() 方法
-; ============================================
 class StatusMonitor {
-    ; 状态数据（键值对，子类可自由使用）
-    dataMap := Map()
+    timer      := 0
+    interval   := 1000
+    clearTimer := 0
+    x          := 0
+    y          := 0
+    dataMap    := Map()
+    obj        := 0          
+    displayDuration := 1000
+    hwnd          := 0           ; 目标窗口句柄（0=屏幕绝对坐标；非0=窗口相对坐标，且仅在该窗口聚焦时显示）
 
-    ; 内部管理
-    timer     := 0       ; 定时器句柄
-    x         := 0       ; ToolTip X 坐标
-    y         := 0       ; ToolTip Y 坐标
-    interval  := 1000    ; 刷新间隔（毫秒）
-
-    ; --- 公共方法 ---
-
-    ; 启动定时刷新
-    ; @param intervalMs 刷新间隔（毫秒）
-    ; @param posX       ToolTip X 坐标（屏幕坐标）
-    ; @param posY       ToolTip Y 坐标
-    Start(intervalMs := 1000, posX := 0, posY := 0) {
-        this.Stop()                     ; 先停止已有定时器
+    Start(obj, displayDuration:=1000, intervalMs := 1000, posX := 0, posY := 0, hwndTarget := 0) {
+        this.Stop()
+        if IsSet(obj)
+            this.obj := obj
         this.interval := intervalMs
+        this.displayDuration := displayDuration
         this.x := posX
         this.y := posY
+        this.hwnd := hwndTarget
+        this.Refresh()
         this.timer := SetTimer(ObjBindMethod(this, "Refresh"), this.interval)
-        this.Refresh()                  ; 立即显示一次
     }
 
-    ; 停止刷新并清除 ToolTip
+    _ClearTooltip() {
+        ToolTip("", this.x, this.y)
+    }
+
     Stop() {
         if this.timer {
             SetTimer(this.timer, 0)
             this.timer := 0
         }
-        ToolTip("", this.x, this.y)     ; 清除显示
+        if this.clearTimer {
+            SetTimer(this.clearTimer, 0)
+            this.clearTimer := 0
+        }
+        ToolTip("", this.x, this.y)
     }
 
-    ; 存储/更新一项状态数据
     Set(key, value) {
         this.dataMap[key] := value
     }
 
-    ; 删除一项状态数据
     Delete(key) {
         this.dataMap.Delete(key)
     }
 
-    ; 清空所有状态数据
     Clear() {
         this.dataMap.Clear()
     }
 
-    ; --- 内部方法 ---
-
-    ; 定时器回调：刷新 ToolTip 内容
     Refresh() {
-        content := this.Report()        ; 调用子类实现的 Report
-        ToolTip(content, this.x, this.y)
+        if this.hwnd && !WinActive("ahk_id " this.hwnd) {
+            ToolTip("")
+            return
+        }
+
+        screenX := 0, screenY := 0
+        if this.hwnd {
+            ; 窗口相对模式：实时获取窗口位置
+            WinGetPos(&wx, &wy, &ww, &wh, this.hwnd)
+            if (wx < -10000 || wy < -10000) {   ; 最小化/隐藏
+                ToolTip("")
+                return
+            }
+            screenX := wx + this.x
+            screenY := wy + this.y
+        } else {
+            ; 屏幕绝对模式
+            screenX := this.x
+            screenY := this.y
+        }
+
+        ; 如果绑定了对象且有 LogicEnabled 属性，可在此过滤（可选）
+        content := this.Report()
+        ToolTip(content, screenX, screenY)
+
+        ; 鼠标穿透处理
+        DetectHiddenWindows(true)
+        ttHwnd := WinExist("ahk_class tooltips_class32 ahk_pid " ProcessExist())
+        if ttHwnd {
+            exStyle := WinGetExStyle(ttHwnd)
+            WinSetExStyle(exStyle | 0x08000020, ttHwnd)   ; WS_EX_NOACTIVATE | WS_EX_TRANSPARENT
+        }
+        DetectHiddenWindows(false)
     }
 
-    ; --- 抽象方法（子类必须实现）---
     Report() {
-        ; 基类提供默认的简单输出，也可要求子类覆盖
-        ; 若希望强制子类实现，可保留此默认，或改成 throw
         s := ""
         for k, v in this.dataMap
             s .= k . ": " . v . "`n"
