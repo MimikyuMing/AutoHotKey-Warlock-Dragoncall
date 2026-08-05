@@ -84,8 +84,12 @@ class App {
         if (this.debugMode)
             OutputDebug "Step 17: InputQueue.Init OK"
 
+        intervalMs := 100
+        posX := 720
+        posY := 570
+        duration := 1000
         monitior := DragoncallStatusMonitor()
-        monitior.Start()
+        monitior.Start(LogicEngine, duration, intervalMs, posX, posY)
 
         OnExit App.Cleanup
         if (this.debugMode)
