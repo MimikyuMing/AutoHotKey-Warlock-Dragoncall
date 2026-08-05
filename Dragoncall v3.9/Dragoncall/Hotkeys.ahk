@@ -36,6 +36,11 @@ F11:: {
     LeechReady := StateManager._skillState.Get("Leech_R", false)
     if(LeechReady){
         LogicEngine.lastUsedLeech := HiResTimer.GetTick()
+        local LeechAfterBanAction4 := 800
+        local LeechAfterBanMantraAndRupture := 1000 ; Ban 真言和破裂
+
+        LogicEngine.usedLeechAfterBanAction4 := HiResTimer.AddMs(LogicEngine.lastUsedLeech, LeechAfterBanAction4)
+                        LogicEngine.usedLeechAfterBanMantraAndRupture := HiResTimer.AddMs(LogicEngine.lastUsedLeech, LeechAfterBanMantraAndRupture)
         LogicEngine.g_Mutex.OnExecuted(3)
     }
 }
@@ -45,6 +50,9 @@ F11:: {
     soulFlareReady := StateManager._skillState.Get("SoulFlare", false)
     if(soulFlareReady){
         LogicEngine.g_Mutex.OnExecuted(2)
+        local SoulFlareAfterBanAction4 := 1000
+        LogicEngine.usedSoulFlareAfterBanAction4 := HiResTimer.AddMs(SoulFlareAfterBanAction4, LogicEngine.lastUsedSoulFlare)
         SetTimer(() => (LogicEngine.g_Mutex.isSFirst := false), -1000)
     }
 }
+
