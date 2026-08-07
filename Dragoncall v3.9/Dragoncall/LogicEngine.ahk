@@ -6,6 +6,7 @@
 #Include DragoncallMutex.ahk
 #Include CaptureEngine.ahk
 #Include ..\Lib\PerformanceMonitor.ahk
+#Include Dragoncall_Config.ahk
 
 class LogicEngine extends LogicRunner {
     ; 覆盖 mutex 为游戏专用类型
@@ -23,6 +24,7 @@ class LogicEngine extends LogicRunner {
     static delayTab := 0
     static WRITELOG := false
     static g_enablePriorityUseDragoncall := 0
+    static g_isUseOpenHasSoulFlareBuff := false
 
     ; 記錄最後一次使用時間
     static lastUsedLeech := -1
@@ -33,14 +35,6 @@ class LogicEngine extends LogicRunner {
     static lastUsedOpen := -1
     static lastUsedRupture := -1
     static lastUsedSoulFlare := -1
-
-    ; UsedAfterBanSkill
-    static usedOpenAfterBanAction4 := -1
-    static usedOpenAfterBanWingstorm := -1
-    static usedLeechAfterBanAction4 := -1
-    static usedLeechAfterBanMantraAndRupture := -1
-    static usedMantraAfterBanRupture := -1
-    static usedSoulFlareAfterBanAction4 := -1
 
     ; ---------- 实现抽象方法 ----------
     static _MainLogic() {
@@ -65,14 +59,14 @@ class LogicEngine extends LogicRunner {
                 }
             }
             ; ---------- 4. Action5 : Open 开门 ---------
-            if(LogicEngine._Open())
+            if (LogicEngine._Open())
                 return
             ; ---------- 5. Action2 : Soulflare 超神 ----------
             LogicEngine._SoulFlare()
             ; ---------- 6. Action1 : Dragoncall & Wingstorm ----------
             LogicEngine._DragoncallOrWingstorm()
             ; ---------- 7. Action3 : Leech 掠夺 ----------
-            if(LogicEngine._Leech())
+            if (LogicEngine._Leech())
                 return
             ; ---------- 8. Action4 : Mantra/Rupture/Bombardment ----------
             LogicEngine._Action4()
@@ -86,6 +80,7 @@ class LogicEngine extends LogicRunner {
     static _Open() {
         ; 當有掠奪buff + 3 的時候 -> 使用open
         hasLeechBuff := StateManager._buffState.Get("Leech", false)
+        hasSoulFlareBuff := StateManager._buffState.Get("SoulFlare", false)
 
         OpenReady := StateManager._skillState.Get("Open_R", false)
 
@@ -108,7 +103,8 @@ class LogicEngine extends LogicRunner {
         )
 
         ; open_available_dragoncall_2 := StateManager._skillState.Get("Critical_Dragoncall", false)
-        open_available_dragoncall_2 := StateManager._skillState.Get("Dragoncall_L_Bridge", false)
+        ; open_available_dragoncall_2 := StateManager._skillState.Get("Dragoncall_L_Bridge", false)
+        open_available_dragoncall_2 := HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= DragoncallConfig.Dragoncall_Bridge_Limit
 
         open_available_dragoncall := open_available_dragoncall_1 || open_available_dragoncall_2
 
@@ -118,23 +114,20 @@ class LogicEngine extends LogicRunner {
 
         open_available_3 := !(open_available_dragoncall || open_available_dragoncall_mid)
 
+
+        open_available_4 := this.g_isUseOpenHasSoulFlareBuff ? true : !hasSoulFlareBuff
+
         ; TODO : open邏輯有問題
         open_condition := this.g_Gold_Open
             && open_available_1
             && open_available_2
             && open_available_3
+            && open_available_4
 
         if (this.g_Mutex.CanExecute(5) && open_condition) {
             this.SendKey("3", "LogEngine-SendOpen")
             this.g_Mutex.OnExecuted(5)
             this.lastUsedOpen := HiResTimer.GetTick()
-
-            local OpenAfterBanAction4 := 100
-            this.usedOpenAfterBanAction4 := HiResTimer.AddMs(this.g_Mutex.openSleepTime + OpenAfterBanAction4) ; 100ms 之內不使用Action4,當使用失敗的時候移除限制
-
-            local OpenAfterBanWingstorm := 100
-            this.usedOpenAfterBanWingstorm := HiResTimer.AddMs(this.g_Mutex.openSleepTime + OpenAfterBanWingstorm)
-
             return true
         }
         return false
@@ -184,13 +177,9 @@ class LogicEngine extends LogicRunner {
 
                 ; 如果处于BUFF的时候
                 LeechIsUsedOrExist := preLeech || result || hasLeechBuff
-
-                local SoulFlareAfterBanAction4 := 1000
-
                 lastResult := soulFlareReady && LeechIsUsedOrExist
                 if (lastResult) {
                     this.DelaySendTab()
-                    this.usedSoulFlareAfterBanAction4 := HiResTimer.AddMs(SoulFlareAfterBanAction4)
                 }
             }
         }
@@ -203,7 +192,9 @@ class LogicEngine extends LogicRunner {
         dragoncallReady := StateManager._skillState.Get("Dragoncall_R", false)
 
 
-        wingstorm_criticalDragoncall_Ready := this.g_enablePriorityUseDragoncall ? StateManager._skillState.Get("Critical_Dragoncall", false) || StateManager._skillState.Get("Dragoncall_L_Bridge", false) : false
+        ; wingstorm_criticalDragoncall_Ready := this.g_enablePriorityUseDragoncall ? StateManager._skillState.Get("Critical_Dragoncall", false) || StateManager._skillState.Get("Dragoncall_L_Bridge", false) : false
+
+        wingstorm_criticalDragoncall_Ready := this.g_enablePriorityUseDragoncall ? HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= DragoncallConfig.Dragoncall_Bridge_Limit : false
 
         local wingstorm_GCD := 500 + 100
         local LeechAfterBanWingstorm := 800 + 150
@@ -241,20 +232,17 @@ class LogicEngine extends LogicRunner {
         soulFlareReady := this.g_AutoSoulFlare && StateManager._skillState.Get("SoulFlare", false)
 
         ; 當使用Open之後,opensleeptime + 10ms內不使用action4
-        action4_unavailable_1 := HiResTimer.GetTick() <= this.usedOpenAfterBanAction4
+        local OpenAfterBanAction4 := 100
+        action4_unavailable_1 := HiResTimer.DeltaMs(this.lastUsedOpen, HiResTimer.GetTick()) <= (this.g_Mutex.openSleepTime + OpenAfterBanAction4)
         ; 當使用Leech之後,0.8s內不使用action4
-        action4_unavailable_2 := HiResTimer.GetTick() <= this.usedLeechAfterBanAction4
+        local LeechAfterBanAction4 := 800
+        action4_unavailable_2 := HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) <= (this.g_Mutex.leechSleepTime + LeechAfterBanAction4)
         ; 當preLeech就緒(除非處於soulflare或者未啟用g_isUseLeechHasLeechBuff)的情況下,不使用action4
         action4_unavailable_3 := preLeech && (!hasSoulFlareBuff || !this.g_isUseLeechHasLeechBuff)
         action4_unavailable_4 := soulFlareReady
 
-        ; TODO : 非延遲超神會有禁止1s使用action4,但是會有一個問題就是,後續使用可能會導致戰中停頓1s
-        action4_unavailable_5 := this.usedSoulFlareAfterBanAction4 == -1 ? false : HiResTimer.GetTick() <= this.usedSoulFlareAfterBanAction4
 
-        local enabledSoulFlareBanAction4 := false
-        action4_unavailable_6 := enabledSoulFlareBanAction4 ? action4_unavailable_5 : false
-
-        action4_available := (!action4_unavailable_1 || !action4_unavailable_2 || !action4_unavailable_3 || !action4_unavailable_4) && !action4_unavailable_6
+        action4_available := (!action4_unavailable_1 || !action4_unavailable_2 || !action4_unavailable_3 || !action4_unavailable_4)
 
 
         if (this.g_Mutex.CanExecute(4) && action4_available) {
@@ -263,34 +251,40 @@ class LogicEngine extends LogicRunner {
             RuptureReady := CaptureEngine.g_CurrentFocus <= (hasSoulFlareBuff ? 1 : (hasLeechBuff ? 2 : 2))
                 && StateManager._skillState.Get("Rupture_L", false)
 
-            mantraAndRupture_unavailable := HiResTimer.GetTick() <= this.usedLeechAfterBanMantraAndRupture
+            local LeechAfterBanMantraAndRupture := 1000 ; Ban 真言和破裂
+            mantraAndRupture_unavailable := HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) <= (this.g_Mutex.leechSleepTime + LeechAfterBanMantraAndRupture)
 
-            if (!mantraAndRupture_unavailable) {
-                if (MantraReady) {
-                    this.SendKey("r", "LogEngine-SendMantra")
+            local MantraAfterBanRupture := 500
+            Rupture_unavailable := HiResTimer.DeltaMs(this.lastUsedMantra, HiResTimer.GetTick()) <= MantraAfterBanRupture
+
+            Mantra_available := !mantraAndRupture_unavailable && MantraReady
+            Rupture_available := (!Rupture_unavailable || !mantraAndRupture_unavailable) && RuptureReady
+
+            if (Mantra_available) {
+                this.SendKey("r", "LogEngine-SendMantra")
+                this.g_Mutex.OnExecuted(4)
+                this.lastUsedMantra := HiResTimer.GetTick()
+            } else if (Rupture_available) {
+                this.SendKey("f", "LogEngine-SendRupture")
+                this.g_Mutex.OnExecuted(4)
+                this.lastUsedRupture := HiResTimer.GetTick()
+            } else {
+                ; TODO StateManager._skillState.Get("RealBombardment", false) || StateManager._skillState.Get("Bombardment", false) 不可用!
+                bombardment_available := StateManager._skillState.Get("RealBombardment", false) || StateManager._skillState.Get("Bombardment", false)
+                OutputDebug "bombardment_available:" bombardment_available
+                bombardment_available := true
+
+                BombardmentReady := bombardment_available && HiResTimer.GetTick() >= Min(
+                    HiResTimer.AddMs(700, this.lastUsedRupture), HiResTimer.AddMs(1000, this.lastUsedMantra)
+                )
+
+                if (BombardmentReady) {
+                    this.SendKey("t", "LogEngine-SendBombardment")
                     this.g_Mutex.OnExecuted(4)
-                    this.lastUsedMantra := HiResTimer.GetTick()
-                    local MantraAfterBanRupture := 500
-                    this.usedMantraAfterBanRupture := HiResTimer.AddMs(MantraAfterBanRupture)
-                } else if (RuptureReady && HiResTimer.GetTick() >= this.usedMantraAfterBanRupture) {
-                    this.SendKey("f", "LogEngine-SendRupture")
-                    this.g_Mutex.OnExecuted(4)
-                    this.lastUsedRupture := HiResTimer.GetTick()
+                    this.lastUsedBombardment := HiResTimer.GetTick()
                 }
             }
-            
-            bombardment_available := StateManager._skillState.Get("RealBombardment_R", false) || StateManager._skillState.Get("Bombardment_R", false)
-            
-            BombardmentReady := bombardment_available && HiResTimer.GetTick() >= Min(
-                HiResTimer.AddMs(700, this.lastUsedRupture), HiResTimer.AddMs(1000, this.lastUsedMantra)
-            )
-            
-            
-            if (BombardmentReady) {
-                this.SendKey("t", "LogEngine-SendBombardment")
-                this.g_Mutex.OnExecuted(4)
-                this.lastUsedBombardment := HiResTimer.GetTick()
-            }
+
 
         }
     }
@@ -326,13 +320,6 @@ class LogicEngine extends LogicRunner {
                 if (LeechReady) {
                     this.SendKey("f", "LogEngine-SendLeech")
                     this.lastUsedLeech := HiResTimer.GetTick()
-
-                    local LeechAfterBanAction4 := 800
-                    local LeechAfterBanMantraAndRupture := 1000 ; Ban 真言和破裂
-
-                    this.usedLeechAfterBanAction4 := HiResTimer.AddMs(LeechAfterBanAction4)
-                    this.usedLeechAfterBanMantraAndRupture := HiResTimer.AddMs(LeechAfterBanMantraAndRupture)
-
                     this.g_Mutex.OnExecuted(3)
                 } else {
                     return true
@@ -359,7 +346,6 @@ class LogicEngine extends LogicRunner {
                         this.lastUsedOpen := -1 ; 物理使用失败,移除限制
                         this.g_Mutex.ReleaseSleep(1)           ; 只释放 Open 睡眠
                         OutputMsg := "Open多帧判断均在亮起,说明没有物理按下," HiResTimer.NowBeijing()
-                        this.usedOpenAfterBanAction4 := -1
                         res := false
                     } else if (this.g_Mutex.IsInSleep()) {
                         msg := "[Open-Ready] Sleeping! "
@@ -385,7 +371,6 @@ class LogicEngine extends LogicRunner {
                     OutputMsg := "均读取不到Open亮起/暗淡状态!!!!," HiResTimer.NowBeijing()
                     ; 不释放睡眠，保持阻塞等待下一帧
                     this.lastUsedOpen := -1 ; 异常状态,移除限制
-                    this.usedOpenAfterBanAction4 := -1
                     res := true
                 }
             } else if (this.g_Mutex.CurrentSleepType() == 2) { ; Soulflare Sleep
@@ -414,6 +399,17 @@ class LogicEngine extends LogicRunner {
             OutputDebug OutputMsg
             PerformanceMonitor.End("LogEngine-HandleSleep")
         }
+    }
+
+    static InitLastUsed() {
+        this.lastUsedSoulFlare := HiResTimer.AddMs(-15000)
+        this.lastUsedMantra := HiResTimer.AddMs(-15000)
+        this.lastUsedLeech := HiResTimer.AddMs(-15000)
+        this.lastUsedBombardment := HiResTimer.AddMs(-15000)
+        this.lastUsedDragoncall := HiResTimer.AddMs(-15000)
+        this.lastUsedWingstorm := HiResTimer.AddMs(-15000)
+        this.lastUsedOpen := HiResTimer.AddMs(-15000)
+        this.lastUsedRupture := HiResTimer.AddMs(-15000)
     }
 
     ; 辅助方法
