@@ -94,6 +94,8 @@ class App {
         OnExit App.Cleanup
         if (this.debugMode)
             OutputDebug "Step 18: Init complete"
+
+        LogicEngine.InitLastUsed()
         
     }
 
@@ -111,6 +113,8 @@ class App {
         LogicEngine.g_limitationOpen := ParseBool(settings.Has("LimitationOpen") ? settings["LimitationOpen"] : false)
         LogicEngine.g_limitationLeech := ParseBool(settings.Has("LimitationLeech") ? settings["LimitationLeech"] : false)
         LogicEngine.g_enablePriorityUseDragoncall := ParseBool(settings.Has("EnablePriorityUseDragoncall") ? settings["EnablePriorityUseDragoncall"] : false)
+        LogicEngine.g_isUseOpenHasSoulFlareBuff := ParseBool(settings.Has("isUseOpenHasSoulFlareBuff") ? settings["isUseOpenHasSoulFlareBuff"] : false)
+        
 
         ; 模式設定
         LogicEngine.isUsedInputQueue := ParseBool(settings.Has("IsUsedInputQueue") ? settings["IsUsedInputQueue"] : false)
