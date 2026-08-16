@@ -77,6 +77,15 @@ class LogicEngine extends LogicRunner {
     }
 
 
+    /**
+     * 當擁有Leech Buff的時候
+     * 1. 並且擁有Open圖標 -> flag-1
+     * 2. 當上一次使用Leech的時間處於[Leech Sleep + 0.5s,Leech Sleep + 0.5s + 3s]的時候 -> flag-2
+     * 3. 當Dragoncall小於指定百分比cd的 -> flag-3
+     * 4. 當Dragoncall暴擊之後,一定時間內不使用OPEN -> flag-no-1
+     * 5. 當處於SoulFlare buff的時候,可選是否使用Open
+     * @returns {Boolean} 
+     */
     static _Open() {
         ; 當有掠奪buff + 3 的時候 -> 使用open
         hasLeechBuff := StateManager._buffState.Get("Leech", false)
@@ -87,8 +96,8 @@ class LogicEngine extends LogicRunner {
         open_available_1 := OpenReady && hasLeechBuff ; 當有掠奪buff + 3 的時候 -> 使用open
 
         ; 當使用掠奪的0.8+0.5s內不使用Open,在使用掠奪的0~3s內才可以使用open
-        local open_Leech_Disable_Window := 800 + 500 ; 使用Leech之後 0.8+0.5s內不使用Open
-        local open_Leech_Window_Timing := 3000 ; 在使用Leech的0~3s內才可以使用open
+        local open_Leech_Disable_Window := this.g_Mutex.leechSleepTime + 500 ; 使用Leech之後 0.8+0.5s內不使用Open
+        local open_Leech_Window_Timing := open_Leech_Disable_Window + 3000 ; 在使用Leech的0~3s內才可以使用open
         delta_Leech := HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick())
         open_available_2 :=
             (delta_Leech >= open_Leech_Disable_Window) ; 0.8+0.5
@@ -104,15 +113,15 @@ class LogicEngine extends LogicRunner {
 
         ; open_available_dragoncall_2 := StateManager._skillState.Get("Critical_Dragoncall", false)
         ; open_available_dragoncall_2 := StateManager._skillState.Get("Dragoncall_L_Bridge", false)
-        open_available_dragoncall_2 := HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= DragoncallConfig.Dragoncall_Bridge_Limit
+        open_available_dragoncall_2 := HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) >= DragoncallConfig.Dragoncall_Bridge_Limit
 
-        open_available_dragoncall := open_available_dragoncall_1 || open_available_dragoncall_2
+        open_unavailable_dragoncall := !(open_available_dragoncall_1 && open_available_dragoncall_2)
 
         open_available_dragoncall_mid :=
             StateManager._skillState.Get("Dragoncall_L", false) &&
             StateManager._skillState.Get("Dragoncall_Mid", false)
 
-        open_available_3 := !(open_available_dragoncall || open_available_dragoncall_mid)
+        open_available_3 := open_unavailable_dragoncall && !open_available_dragoncall_mid
 
 
         open_available_4 := this.g_isUseOpenHasSoulFlareBuff ? true : !hasSoulFlareBuff
@@ -194,7 +203,7 @@ class LogicEngine extends LogicRunner {
 
         ; wingstorm_criticalDragoncall_Ready := this.g_enablePriorityUseDragoncall ? StateManager._skillState.Get("Critical_Dragoncall", false) || StateManager._skillState.Get("Dragoncall_L_Bridge", false) : false
 
-        wingstorm_criticalDragoncall_Ready := this.g_enablePriorityUseDragoncall ? HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= DragoncallConfig.Dragoncall_Bridge_Limit : false
+        wingstorm_criticalDragoncall_Ready := this.g_enablePriorityUseDragoncall ? HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) >= DragoncallConfig.Dragoncall_Bridge_Limit : false
 
         local wingstorm_GCD := 500 + 100
         local LeechAfterBanWingstorm := 800 + 150
@@ -209,7 +218,17 @@ class LogicEngine extends LogicRunner {
         ; GCD
         wingstorm_unavailable_4 := wingstorm_GCD <= HiResTimer.DeltaMs(this.lastUsedDragoncall, HiResTimer.GetTick())
 
-        wingstorm_available := (!wingstorm_unavailable_1 || !wingstorm_unavailable_3 || !wingstorm_unavailable_4) && !wingstorm_unavailable_2
+        local onlyOpenUsedTheLimit := true
+
+        local onlyOpenUsedTheLimit_Condition := onlyOpenUsedTheLimit ?
+        (HiResTimer.DeltaMs(this.lastUsedOpen, HiResTimer.GetTick()) >= 550)
+        : false
+
+
+        wingstorm_available := 
+            onlyOpenUsedTheLimit_Condition ? 
+                (!wingstorm_unavailable_1 || !wingstorm_unavailable_3 || !wingstorm_unavailable_4) && !wingstorm_unavailable_2
+                : true
 
         if (this.g_Mutex.CanExecute(1)) {
             if (dragoncallReady) {
@@ -269,14 +288,13 @@ class LogicEngine extends LogicRunner {
                 this.g_Mutex.OnExecuted(4)
                 this.lastUsedRupture := HiResTimer.GetTick()
             } else {
-                ; TODO StateManager._skillState.Get("RealBombardment", false) || StateManager._skillState.Get("Bombardment", false) 不可用!
                 bombardment_available := StateManager._skillState.Get("RealBombardment", false) || StateManager._skillState.Get("Bombardment", false)
-                OutputDebug "bombardment_available:" bombardment_available
-                bombardment_available := true
+                ; bombardment_available := true
 
+                local BombardLimit := 20
                 BombardmentReady := bombardment_available && HiResTimer.GetTick() >= Min(
                     HiResTimer.AddMs(700, this.lastUsedRupture), HiResTimer.AddMs(1000, this.lastUsedMantra)
-                )
+                ) && HiResTimer.DeltaMs(this.lastUsedBombardment, HiResTimer.GetTick()) >= BombardLimit
 
                 if (BombardmentReady) {
                     this.SendKey("t", "LogEngine-SendBombardment")
@@ -329,7 +347,7 @@ class LogicEngine extends LogicRunner {
         }
     }
 
-    static _HandleSleepState() {
+    static _Old_HandleSleepState() {
         PerformanceMonitor.Start("LogEngine-HandleSleep")
         msg := ""
         OutputMsg := ""
@@ -351,10 +369,11 @@ class LogicEngine extends LogicRunner {
                         msg := "[Open-Ready] Sleeping! "
                         OutputMsg := "Open多帧判断是否亮起中,正在sleep," HiResTimer.NowBeijing()
                         res := true
+                    }else {
+                        msg := "[Open-Ready] Error! "
+                        OutputMsg := "Open多帧判断异常错误!!!!," HiResTimer.NowBeijing()
+                        res := false
                     }
-                    msg := "[Open-Ready] Error! "
-                    OutputMsg := "Open多帧判断异常错误!!!!," HiResTimer.NowBeijing()
-                    res := false
                 } else if (openBlackReady) {
                     if (this.g_Mutex.IsInSleep()) {
                         msg := "[Open-Blank] Sleeping! "
@@ -398,6 +417,86 @@ class LogicEngine extends LogicRunner {
             this.writeLogEvent(HiResTimer.NowBeijing(), msg)
             OutputDebug OutputMsg
             PerformanceMonitor.End("LogEngine-HandleSleep")
+        }
+    }
+
+    static _HandleSleepState() {
+        PerformanceMonitor.Start("LogEngine-HandleSleep")
+        OutputMsg := ""
+        logMsg := ""
+        try {
+            value := this.g_Mutex.CurrentSleepType()
+            switch value {
+                case 1:  ; 开门
+                    return this._HandleOpenSleep(&logMsg, &OutputMsg)
+                case 2:  ; 超神
+                    logMsg := "[HandleSleepState Soulflare] Soulflare Sleep! "
+                    OutputMsg := "超神睡眠状态中," . HiResTimer.NowBeijing()
+                    return false
+                case 3:  ; 掠夺
+                    logMsg := "[HandleSleepState Leech] Leech Sleep! "
+                    OutputMsg := "掠夺睡眠状态中," . HiResTimer.NowBeijing()
+                    return false
+                case 4:  ; 暂无
+                    logMsg := "[HandleSleepState] Type 4 - no action"
+                    OutputMsg := "类型4无操作," . HiResTimer.NowBeijing()
+                    return false
+                case 5:  ; 警戒斩
+                    logMsg := "[HandleSleepState X] X Sleep! "
+                    OutputMsg := "X睡眠状态中," . HiResTimer.NowBeijing()
+                    return true
+                default:
+                    logMsg := "[HandleSleepState Error] unknow sleep type! Release Data! "
+                    this.g_Mutex.ReleaseSleep()
+                    OutputMsg := "未知异常," . HiResTimer.NowBeijing()
+                    return false
+            }
+        } finally {
+            this.writeLogEvent(HiResTimer.NowBeijing(), logMsg)
+            OutputDebug(OutputMsg)
+            PerformanceMonitor.End("LogEngine-HandleSleep")
+        }
+    }
+
+    static _HandleOpenSleep(&logMsg, &OutputMsg) {
+        OpenReady := StateManager._skillState.Get("Open_R", false)
+        OpenBlackReady := this.g_Gold_Open && !StateManager._skillState.Get("Open_Black", false) && !OpenReady
+        curExpire := this.g_Mutex.CurrentSleepExpire()
+
+        if (OpenReady) {
+            MaxOvertime := Floor(this.g_Mutex.openSleepTime * (1 / 3))
+            overtime := HiResTimer.DeltaMs(curExpire, HiResTimer.GetTick())
+            if (MaxOvertime <= overtime) {
+                logMsg := "[HandleSleepState Open-Ready] Overtime! curOvertime: " . overtime . " "
+                this.lastUsedOpen := -1
+                this.g_Mutex.ReleaseSleep(1)
+                OutputMsg := "Open多帧判断均在亮起,说明没有物理按下," . HiResTimer.NowBeijing()
+                return false
+            } else if (this.g_Mutex.IsInSleep()) {
+                logMsg := "[HandleSleepState Open-Ready] Sleeping! "
+                OutputMsg := "Open多帧判断是否亮起中,正在sleep," . HiResTimer.NowBeijing()
+                return true
+            } else {
+                logMsg := "[HandleSleepState Open-Ready] Error! Unexpected state"
+                OutputMsg := "Open多帧判断异常错误!!!!," . HiResTimer.NowBeijing()
+                return false
+            }
+        } else if (OpenBlackReady) {
+            if (this.g_Mutex.IsInSleep()) {
+                logMsg := "[HandleSleepState Open-Blank] Sleeping! "
+                OutputMsg := "Open物理按下/GCD空转中,正在sleep," . HiResTimer.NowBeijing()
+                return true
+            } else {
+                logMsg := "[HandleSleepState Open-Ready] Don't Sleep!Releasing! "
+                this.g_Mutex.ReleaseSleep(1)
+                OutputMsg := "Open物理按下/GCD空转中,不处于Sleep,释放Sleep条件," . HiResTimer.NowBeijing()
+                return false
+            }
+        } else {
+            logMsg := "[HandleSleepState Open] OpenReadyNotExist And OpenBlankNotExist Releasing! "
+            OutputMsg := "均读取不到Open亮起/暗淡状态!!!!," . HiResTimer.NowBeijing()
+            this.lastUsedOpen := -1
+            return true
         }
     }
 
