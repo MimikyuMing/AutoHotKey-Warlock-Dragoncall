@@ -5,10 +5,19 @@
 #Include ..\Lib\Globals.ahk
 #Include DragoncallGlobals.ahk
 
+
+GetCurrentVersion(*) {
+    return version
+}
+
 ShowSettingsGUI(*) {
     global _settingsGui
     try _settingsGui.Destroy()
-    _settingsGui := Gui("", "技能自动化设置")
+    
+    version := GetCurrentVersion()
+    title := "暴魔灵-v" . version
+
+    _settingsGui := Gui("", title)
 
     _settingsGui.SetFont("s10", "Microsoft YaHei")
 
