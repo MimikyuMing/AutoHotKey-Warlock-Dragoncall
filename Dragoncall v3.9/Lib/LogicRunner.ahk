@@ -60,7 +60,6 @@ class LogicRunner {
     }
 
     static SendKey(key, str){
-        Critical "On"
         params:= Format("Keyboard is {} , Logic is {}", key, str)
         PerformanceMonitor.Start(str)
         if(this.isUsedInputQueue){
@@ -69,6 +68,5 @@ class LogicRunner {
             Send key
         }
         PerformanceMonitor.End(str, params)
-        Critical "Off"
     }
 }
