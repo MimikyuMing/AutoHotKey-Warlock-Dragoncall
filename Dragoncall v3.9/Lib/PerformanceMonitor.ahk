@@ -110,7 +110,10 @@ class PerformanceMonitor {
             return
         if !this.timers.Has(stage)
             return
-        startTick := this.timers.Delete(stage)
+        try
+            startTick := this.timers.Delete(stage)
+        catch
+            return   ; 没有对应的 Start，忽略
         elapsedUs := HiResTimer.DeltaUs(startTick, HiResTimer.GetTick())
         if !this.records.Has(stage)
             this.records[stage] := {count: 0, total: 0.0, min: 1e9, max: 0}
