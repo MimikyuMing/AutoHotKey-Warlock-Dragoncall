@@ -6,11 +6,25 @@
 ; Lib\CaptureClient.ahk
 class CaptureClient {
     static pView := 0
-    static hDll  := 0
-    static hMap  := 0
+    static hDll := 0
+    static hMap := 0
     static pStopCapture := 0
 
     static isValid := false
+
+
+    ; 共享内存布局常量
+    static OFFSET_FRAMEID := 0
+    static OFFSET_TIMESTAMP := 4
+    static OFFSET_FOCUS := 12
+    static OFFSET_SKILLCNT := 16
+    static OFFSET_BUFFCNT := 20
+    static OFFSET_SKILLDATA := 24
+    static OFFSET_BUFFDATA := 152
+    static OFFSET_PERFUS := 280
+    static MAX_SKILLS := 128
+    static MAX_BUFFS := 128
+    static TOTAL_SIZE := 284   ; 或 4096，但读取时不会超出
 
 
     ; 帧缓存（静态）
@@ -18,7 +32,6 @@ class CaptureClient {
     static cachedFrameData := false
 
     static RealtimeMode := 0
-
 
 
     static Start(dllPath, iniPath, mapName := "Local\DragoncallState") {
@@ -73,7 +86,7 @@ class CaptureClient {
             if this.hDll
                 DllCall("FreeLibrary", "Ptr", this.hDll)
         } catch {
-            
+
         }
     }
 
@@ -104,40 +117,36 @@ class CaptureClient {
             buffNames.Push(name)
             buffIdx[name] := A_Index - 1
         }
-        return {skillNames: skillNames, skillIdx: skillIdx,
-                buffNames: buffNames, buffIdx: buffIdx}
+        return { skillNames: skillNames, skillIdx: skillIdx,
+            buffNames: buffNames, buffIdx: buffIdx }
     }
 
     static ReadFrame() {
         if !this.pView
             return false
 
-        local frameId := NumGet(this.pView, 0, "UInt")
-        local focus   := NumGet(this.pView, 12, "Int")
-        local sc      := NumGet(this.pView, 16, "UInt")
-        local bc      := NumGet(this.pView, 20, "UInt")
+        ; OutputDebug "AHK pView: " this.pView         ; 输出地址
 
-        ; 如果捕获线程还没写入第一帧，所有值可能为 0
-        if (frameId == 0 && sc == 0 && bc == 0)
-            return false
+        local frameId := NumGet(this.pView, this.OFFSET_FRAMEID, "UInt")
+        local focus := NumGet(this.pView, this.OFFSET_FOCUS, "Int")
+        local sc := NumGet(this.pView, this.OFFSET_SKILLCNT, "UInt")
+        local bc := NumGet(this.pView, this.OFFSET_BUFFCNT, "UInt")
 
-        ; 限制最大数量
-        if (sc > 128 || bc > 128)
-            return false
-
-        ; 检查总大小是否超出共享内存
-        if (24 + sc + bc + 12 > 4096)
+        if (sc > this.MAX_SKILLS || bc > this.MAX_BUFFS)
             return false
 
         local skillBytes := Buffer(sc, 0)
-        if (sc > 0)
-            DllCall("RtlMoveMemory", "Ptr", skillBytes, "Ptr", this.pView + 24, "UPtr", sc)
-
         local buffBytes := Buffer(bc, 0)
-        if (bc > 0)
-            DllCall("RtlMoveMemory", "Ptr", buffBytes, "Ptr", this.pView + 24 + sc, "UPtr", bc)
 
-        return {frameId: frameId, focus: focus, skillBytes: skillBytes, buffBytes: buffBytes}
+        Loop sc
+            NumPut("UChar", NumGet(this.pView, this.OFFSET_SKILLDATA + A_Index - 1, "UChar"), skillBytes, A_Index - 1)
+        Loop bc
+            NumPut("UChar", NumGet(this.pView, this.OFFSET_BUFFDATA + A_Index - 1, "UChar"), buffBytes, A_Index - 1)
+
+        ; ToolTip "frameId:" frameId ",focus:" focus ",sc:" sc ",bc:" bc
+        ;     . "`nSkill0:" (sc > 0 ? NumGet(skillBytes, 0, "UChar") : "N/A"), 0, 0
+
+        return { frameId: frameId, focus: focus, skillBytes: skillBytes, buffBytes: buffBytes }
     }
 
     static SyncStates(frameData, skillIdx, buffIdx) {
@@ -147,6 +156,7 @@ class CaptureClient {
         for name, idx in skillIdx {
             local state := (idx < sc) ? NumGet(frameData.skillBytes, idx, "UChar") : 0
             StateManager._skillState[name] := state
+            ; OutputDebug "name: " name ", state:" state
         }
         for name, idx in buffIdx {
             local state := (idx < bc) ? NumGet(frameData.buffBytes, idx, "UChar") : 0
@@ -156,7 +166,7 @@ class CaptureClient {
     }
 
 
-        ; 获取当前帧数据（同一帧内只读取一次共享内存）
+    ; 获取当前帧数据（同一帧内只读取一次共享内存）
     static GetCachedFrame() {
 
         if !this.isValid || !this.pView
