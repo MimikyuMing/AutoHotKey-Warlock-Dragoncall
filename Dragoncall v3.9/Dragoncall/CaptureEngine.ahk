@@ -29,8 +29,8 @@ class CaptureEngine extends CaptureClient {
         ; 启动定时器
         interval := DETECT_INTERVAL   
         this.DetectTimer := SetTimer(ObjBindMethod(CaptureEngine, "UpdateState"), interval)
-        for name in CaptureEngine.skillNames
-            OutputDebug "Skill: " name
+        ; for name in CaptureEngine.skillNames
+        ;     OutputDebug "Skill: " name
     }
 
     static UpdateState() {
@@ -72,21 +72,23 @@ class CaptureEngine extends CaptureClient {
 
         ; 首次观察到Dragoncall亮起
         Dragoncall_Bridge := StateManager._skillState.Get("Dragoncall_L_Bridge", false)
-        if(Dragoncall_Bridge){
-            if(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd == -1){
-                DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd := HiResTimer.GetTick()
-                OutputDebug "首次观察到Dragoncall亮起,记录时间戳: " DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd
-            }else {
-                ; 有值,判断是否超过ResetLimit阈值,重置
-                if(HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) >= DragoncallConfig.Dragoncall_Bridge_Limit_Reset){
-                    ; Reset
-                    DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd := HiResTimer.GetTick()
-                    OutputDebug "Dragoncall亮起时间超过阈值，重置时间戳: " DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd
-                }
-            }
+        ; if(Dragoncall_Bridge){
+        ;     if(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd == -1){
+        ;         DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd := HiResTimer.GetTick()
+        ;         OutputDebug "首次观察到Dragoncall亮起,记录时间戳: " DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd
+        ;     }else {
+        ;         ; 有值,判断是否超过ResetLimit阈值,重置
+        ;         if(HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) >= DragoncallConfig.Dragoncall_Bridge_Limit_Reset){
+        ;             ; Reset
+        ;             DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd := HiResTimer.GetTick()
+        ;             OutputDebug "Dragoncall亮起时间超过阈值，重置时间戳: " DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd
+        ;         }
+        ;     }
 
+        ; }
+        if(Dragoncall_Bridge && !(HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= 10)){
+            DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd := HiResTimer.GetTick()
         }
-
 
         this.g_LastUpdateStateTime := HiResTimer.DeltaMs(start, HiResTimer.GetTick())
         PerformanceMonitor.End("CaptureEngine-UpdateState")
