@@ -1,6 +1,7 @@
 #Requires AutoHotkey v2.0
 
 #Include StateManager.ahk
+#Include PerformanceMonitor.ahk
 
 ; RealtimeMap.ahk
 class RealtimeMap extends Map {
