@@ -117,6 +117,7 @@ class App {
         LogicEngine.g_limitationLeech := ParseBool(settings.Has("LimitationLeech") ? settings["LimitationLeech"] : false)
         LogicEngine.g_enablePriorityUseDragoncall := ParseBool(settings.Has("EnablePriorityUseDragoncall") ? settings["EnablePriorityUseDragoncall"] : false)
         LogicEngine.g_isUseOpenHasSoulFlareBuff := ParseBool(settings.Has("isUseOpenHasSoulFlareBuff") ? settings["isUseOpenHasSoulFlareBuff"] : false)
+        LogicEngine.g_isUsedLeechFromMySelf := ParseBool(settings.Has("isUsedLeechFromMySelf") ? settings["isUsedLeechFromMySelf"] : false)
         
 
         ; 模式設定
