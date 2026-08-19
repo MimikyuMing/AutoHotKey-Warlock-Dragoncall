@@ -6,29 +6,29 @@
 class PerformanceMonitor {
     static enabled := false
     static records := Map()
-    static timers  := Map()
+    static timers := Map()
 
-    static monitorCpu     := false
-    static monitorMem     := false
-    static sampleTimer    := 0
-    static cpuSamples     := []
-    static memSamples     := []
-    static lastCpuKernel  := 0
-    static lastCpuUser    := 0
+    static monitorCpu := false
+    static monitorMem := false
+    static sampleTimer := 0
+    static cpuSamples := []
+    static memSamples := []
+    static lastCpuKernel := 0
+    static lastCpuUser := 0
     static lastSampleTick := 0
 
-    static reportTimer    := 0
+    static reportTimer := 0
     static reportInterval := 1   ; 分钟，0 = 禁用
 
-    static archiveQueue   := []  ; 存放每分钟的完整报告文本
+    static archiveQueue := []  ; 存放每分钟的完整报告文本
     static archiveRecords := []  ; 存放每分钟 records 的快照，用于归档报告
 
     static slowThresholdUs := 10000   ; 慢执行阈值（微秒）
-    static slowLogEnabled  := true    ; 是否启用慢日志
+    static slowLogEnabled := true    ; 是否启用慢日志
 
     ; ---------- 初始化 ----------
     static Init(enable, enableCpu := false, enableMem := false, reportInterval := 1) {
-        this.enabled    := enable
+        this.enabled := enable
         this.monitorCpu := enableCpu
         this.monitorMem := enableMem
         this.reportInterval := reportInterval
@@ -48,10 +48,10 @@ class PerformanceMonitor {
 
     ; ---------- 资源采样（不变） ----------
     static StartResourceSampling() {
-        this.lastCpuKernel  := 0
-        this.lastCpuUser    := 0
+        this.lastCpuKernel := 0
+        this.lastCpuUser := 0
         this.lastSampleTick := HiResTimer.GetTick()
-        this.sampleTimer    := SetTimer(ObjBindMethod(this, "SampleResources"), 1000)
+        this.sampleTimer := SetTimer(ObjBindMethod(this, "SampleResources"), 1000)
     }
     static StopResourceSampling() {
         if this.sampleTimer {
@@ -66,15 +66,15 @@ class PerformanceMonitor {
             NumPut("UInt", 72, pmc, 0)
             if DllCall("K32GetProcessMemoryInfo", "Ptr", hProcess, "Ptr", pmc, "UInt", 72) {
                 memBytes := NumGet(pmc, 16, "UInt64")
-                memMb    := Round(memBytes / 1048576, 2)
+                memMb := Round(memBytes / 1048576, 2)
                 this.memSamples.Push(memMb)
             }
         }
         if this.monitorCpu {
             ftCreation := 0, ftExit := 0, kernelTime := 0, userTime := 0
             if DllCall("GetProcessTimes", "Ptr", hProcess,
-                       "Int64*", &ftCreation, "Int64*", &ftExit,
-                       "Int64*", &kernelTime, "Int64*", &userTime) {
+                "Int64*", &ftCreation, "Int64*", &ftExit,
+                "Int64*", &kernelTime, "Int64*", &userTime) {
                 totalCpu := kernelTime + userTime
                 if (this.lastCpuKernel > 0) {
                     deltaCpu := totalCpu - (this.lastCpuKernel + this.lastCpuUser)
@@ -85,7 +85,7 @@ class PerformanceMonitor {
                     }
                 }
                 this.lastCpuKernel := kernelTime
-                this.lastCpuUser   := userTime
+                this.lastCpuUser := userTime
                 this.lastSampleTick := HiResTimer.GetTick()
             }
         }
@@ -94,7 +94,7 @@ class PerformanceMonitor {
     ; ---------- 重置临时统计（保留归档数据和资源基准） ----------
     static Reset() {
         this.records := Map()
-        this.timers  := Map()
+        this.timers := Map()
         this.cpuSamples := []
         this.memSamples := []
     }
@@ -116,7 +116,7 @@ class PerformanceMonitor {
             return   ; 没有对应的 Start，忽略
         elapsedUs := HiResTimer.DeltaUs(startTick, HiResTimer.GetTick())
         if !this.records.Has(stage)
-            this.records[stage] := {count: 0, total: 0.0, min: 1e9, max: 0}
+            this.records[stage] := { count: 0, total: 0.0, min: 1e9, max: 0 }
         rec := this.records[stage]
         rec.count += 1
         rec.total += elapsedUs
@@ -128,7 +128,7 @@ class PerformanceMonitor {
 
         ; 慢执行检测
         if (this.slowLogEnabled && this.slowThresholdUs > 0 && elapsedUs >= this.slowThresholdUs) {
-            msg := Format("{} [SLOW] {} took {} us", HiResTimer.NowBeijing() , stage, elapsedUs)
+            msg := Format("{} [SLOW] {} took {} us", HiResTimer.NowBeijing(), stage, elapsedUs)
             if (params != "")
                 msg .= Format(", params: {}", params)
             Log.Write(msg)
@@ -164,7 +164,7 @@ class PerformanceMonitor {
     static _DeepCopyRecords(src) {
         copy := Map()
         for stage, rec in src
-            copy[stage] := {count: rec.count, total: rec.total, min: rec.min, max: rec.max}
+            copy[stage] := { count: rec.count, total: rec.total, min: rec.min, max: rec.max }
         return copy
     }
 
@@ -206,19 +206,20 @@ class PerformanceMonitor {
         s := "`n========== Performance Report ==========`n"
         s .= "Generated at " HiResTimer.NowBeijing() "`n"
 
-        s .= "+--------------------------------+--------+------------+------------+------------+`n"
-        s .= "| Stage                          |  Count |   Avg (us) |   Min (us) |   Max (us) |`n"
-        s .= "+--------------------------------+--------+------------+------------+------------+`n"
+        s .= "+--------------------------------+--------+--------------+------------+------------+------------+`n"
+        s .= "| Stage                          |  Count |   Total (s)  |   Avg (us) |   Min (us) |   Max (us) |`n"
+        s .= "+--------------------------------+--------+--------------+------------+------------+------------+`n"
 
         sorted := []
         for stage, rec in records
-            sorted.Push({stage: stage, count: rec.count, avg: rec.total / rec.count, min: rec.min, max: rec.max})
-        ; 冒泡降序
+            sorted.Push({ stage: stage, count: rec.count, total: rec.total / 1000000, avg: rec.total / rec.count, min: rec.min, max: rec.max })
+
+        ; 冒泡降序（按 Max 排序，保持不变）
         Loop sorted.Length - 1 {
             i := A_Index
             Loop sorted.Length - i {
                 j := A_Index
-                if sorted[j].max < sorted[j + 1].max {
+                if sorted[j].avg < sorted[j + 1].avg {
                     tmp := sorted[j]
                     sorted[j] := sorted[j + 1]
                     sorted[j + 1] := tmp
@@ -227,12 +228,12 @@ class PerformanceMonitor {
         }
 
         for item in sorted {
-            row := Format("| {1:-30s} | {2:6d} | {3:10.1f} | {4:10.1f} | {5:10.1f} |",
-                        item.stage, item.count, item.avg, item.min, item.max)
+            row := Format("| {1:-30s} | {2:6d} | {3:12.5f} | {4:10.1f} | {5:10.1f} | {6:10.1f} |",
+                item.stage, item.count, item.total, item.avg, item.min, item.max)
             s .= row "`n"
         }
 
-        s .= "+--------------------------------+--------+------------+------------+------------+`n"
+        s .= "+--------------------------------+--------+--------------+------------+------------+------------+`n"
 
         if (this.monitorCpu && this.cpuSamples.Length > 0) {
             avgCpu := 0.0
@@ -253,7 +254,7 @@ class PerformanceMonitor {
             }
             avgMem := avgMem / this.memSamples.Length
             s .= Format("Memory (MB):  Avg {1:.1f}   Min {2:.1f}   Max {3:.1f}   (sampled {4} times)`n",
-                        avgMem, minMem, maxMem, this.memSamples.Length)
+                avgMem, minMem, maxMem, this.memSamples.Length)
         }
         s .= "==========================================`n"
         return s
@@ -273,7 +274,7 @@ class PerformanceMonitor {
                     if rec.max > m.max
                         m.max := rec.max
                 } else {
-                    merged[stage] := {count: rec.count, total: rec.total, min: rec.min, max: rec.max}
+                    merged[stage] := { count: rec.count, total: rec.total, min: rec.min, max: rec.max }
                 }
             }
         }
