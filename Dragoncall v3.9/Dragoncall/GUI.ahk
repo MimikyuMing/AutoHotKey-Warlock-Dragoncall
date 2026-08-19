@@ -54,6 +54,9 @@ ShowSettingsGUI(*) {
     _settingsGui.Add("Checkbox", "vIsUseOpenHasSoulFlareBuff", "有降臨Buff时仍可释放开门").Value := LogicEngine.g_isUseOpenHasSoulFlareBuff
     _settingsGui["IsUseOpenHasSoulFlareBuff"].OnEvent("Click", SaveSettingImmediate)
 
+    _settingsGui.Add("Checkbox", "vIsUsedLeechFromMySelf", "是否只打自己的烙印(需藍結界/藍警戒斬以上)").Value := LogicEngine.g_isUsedLeechFromMySelf
+    _settingsGui["IsUsedLeechFromMySelf"].OnEvent("Click", SaveSettingImmediate)
+
     _settingsGui.Add("Text", "w300 h2 0x7")             ; 水平分隔线
     _settingsGui.Add("Text", "w300 Center", "系统设置")
     _settingsGui.Add("Text", "w300 h2 0x7")             ; 水平分隔线
@@ -95,6 +98,7 @@ SaveSettingImmediate(*) {
     PerformanceMonitor.monitorMem := _settingsGui["MonitorMemory"].Value
     LogicEngine.g_enablePriorityUseDragoncall := _settingsGui["EnablePriorityUseDragoncall"].Value
     LogicEngine.g_isUseOpenHasSoulFlareBuff := _settingsGui["IsUseOpenHasSoulFlareBuff"].Value
+    LogicEngine.g_isUsedLeechFromMySelf := _settingsGui["IsUsedLeechFromMySelf"].Value
     SaveSettingsToFile()
 
 }
@@ -129,4 +133,5 @@ SaveSettingsToFile() {
     IniWrite(PerformanceMonitor.monitorMem, configPath, "Settings", "MonitorMemory")
     IniWrite(LogicEngine.g_enablePriorityUseDragoncall, configPath, "Settings", "EnablePriorityUseDragoncall")
     IniWrite(LogicEngine.g_isUseOpenHasSoulFlareBuff, configPath, "Settings", "isUseOpenHasSoulFlareBuff")
+    IniWrite(LogicEngine.g_isUsedLeechFromMySelf, configPath, "Settings", "isUsedLeechFromMySelf")
 }
