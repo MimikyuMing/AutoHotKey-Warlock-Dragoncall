@@ -5,7 +5,7 @@
 
 class DragoncallMutex extends ActionMutex {
     ; 业务状态
-    isSFirst := false
+    isSFirst := true
     thisFrameAct := 0
 
     ; 技能保护时长

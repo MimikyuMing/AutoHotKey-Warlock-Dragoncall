@@ -54,7 +54,7 @@ class CaptureEngine extends CaptureClient {
          * 2. 当松开侧键超过n s 之后，重新按下侧键判断是否>=N
          * 3. 
          */
-        static logicOffStart := 0
+        static logicOffStart := -1
         if(!LogicEngine.g_LogicEnabled){
             if (logicOffStart == -1)
                 logicOffStart := HiResTimer.GetTick()
@@ -66,6 +66,12 @@ class CaptureEngine extends CaptureClient {
             }
             logicOffStart := -1
         }
+        static l := -1
+        if(!LogicEngine.g_Mutex.isSFirst){
+            OutputDebug "state: " LogicEngine.g_Mutex.isSFirst " , timestamp: " HiResTimer.GetTick() " , logicOffStart: " logicOffStart
+            l := HiResTimer.GetTick()
+        }
+            
 
 
 
