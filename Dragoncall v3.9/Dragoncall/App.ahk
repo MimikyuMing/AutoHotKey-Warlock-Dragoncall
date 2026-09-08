@@ -88,8 +88,8 @@ class App {
         posX := 720
         posY := 570
 
-        posX := 942
-        posY := 495
+        posX := 942 - 10 + 2
+        posY := 495 - 30
         duration := 1000
         monitior := DragoncallStatusMonitor()
         monitior.Start(LogicEngine, duration, intervalMs, posX, posY)
