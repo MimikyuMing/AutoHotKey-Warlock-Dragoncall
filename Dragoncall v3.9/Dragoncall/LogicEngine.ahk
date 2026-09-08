@@ -99,7 +99,7 @@ class LogicEngine extends LogicRunner {
         PerformanceMonitor.Start("LogEngine-Logic-Open")
         try {
             ; 當沒有勾選GoldOpen的時候,跳過使用OPEN邏輯執行
-            if(this.g_Gold_Open){
+            if (!this.g_Gold_Open) {
                 return
             }
             ; 1. 當擁有Leech Buff的時候並且擁有Open圖標 -> flag-1
@@ -201,16 +201,16 @@ class LogicEngine extends LogicRunner {
                 delaySoulFlare := this.g_Gold_Leech
 
                 if (soulflare_available) {
-                    if(hasLeechBuff){
+                    if (hasLeechBuff) {
                         this.DelaySendTab()
-                        return 
+                        return
                     }
                     ; else if (delaySoulFlare && this.g_Mutex.isSFirst && this.delayTab == 0) {
 
                     ;Leech之后的1~2.5s内禁用
                     local disableUsedSF := !(1000 <= HiResTimer.DeltaMs(this.lastUsedLeech + this.g_Mutex.leechSleepTime, HiResTimer.GetTick()) && HiResTimer.DeltaMs(this.lastUsedLeech + this.g_Mutex.leechSleepTime, HiResTimer.GetTick()) <= 2500)
-                    OutputDebug disableUsedSF
-                    if(delaySoulFlare && this.delayTab == 0 && disableUsedSF){
+                    ; OutputDebug disableUsedSF
+                    if (delaySoulFlare && this.delayTab == 0 && disableUsedSF) {
                         return
                     }
 
@@ -297,7 +297,7 @@ class LogicEngine extends LogicRunner {
                     this.SendKey("v", "LogEngine-Send-Wingstorm")
                     this.g_Mutex.OnExecuted(1)
                     this.lastUsedWingstorm := HiResTimer.GetTick()
-                    OutputDebug "press wingstorm " 
+                    ; OutputDebug "press wingstorm "
                 }
             }
         }
@@ -348,11 +348,11 @@ class LogicEngine extends LogicRunner {
              * 4. L 亮 EX-SL EX-L -> continue
              */
             local allowUsedLeechFromMySelf := this.g_isUsedLeechFromMySelf ?
-                (
-                    this.BrandTriggerTime <= HiResTimer.GetTick()
-                    &&
-                    this.BrandOverTime==-1 ? true : HiResTimer.GetTick() <= this.BrandOverTime
-                ) : true
+            (
+                this.BrandTriggerTime <= HiResTimer.GetTick()
+                &&
+                this.BrandOverTime == -1 ? true : HiResTimer.GetTick() <= this.BrandOverTime
+            ) : true
             if (preLeech && allowUsedLeechFromMySelf) {
                 if (hasSoulFlareBuff && hasLeechBuff) {
                     ; continue
@@ -364,7 +364,20 @@ class LogicEngine extends LogicRunner {
                 else if (!hasSoulFlareBuff && hasLeechBuff) {
                     ; INI是否允许使用L? -yes-> return
                     if (this.g_isUseLeechHasLeechBuff) {
-                        return
+                        ; 4. 當Dragoncall暴擊之後,一定時間內不使用Leech
+                        local critical_Dragon_flag := this.g_limitationLeech ? !(
+                            HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= DragoncallConfig.Dragoncall_Bridge_Limit
+                        ) : true
+
+                        ; 3. 當Dragoncall小於指定百分比cd的 -> flag-3
+                        local dragoncall_ready_flag := this.g_limitationLeech ? (StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_Mid", false)) : true
+
+                        local finally_limit_leech := hasLeechBuff ? (dragoncall_ready_flag && critical_Dragon_flag) : true
+                        if(!finally_limit_leech){
+                            ; continue
+                        }else{
+                            return
+                        }
                     } else {
                         ; continue
                     }
@@ -459,11 +472,11 @@ class LogicEngine extends LogicRunner {
             hasSoulFlareBuff := StateManager._buffState.Get("SoulFlare", false)
             allowLeech := false
             local allowUsedLeechFromMySelf := this.g_isUsedLeechFromMySelf ?
-                (
-                    this.BrandTriggerTime <= HiResTimer.GetTick()
-                    &&
-                    this.BrandOverTime==-1 ? true : HiResTimer.GetTick() <= this.BrandOverTime
-                ) : true
+            (
+                this.BrandTriggerTime <= HiResTimer.GetTick()
+                &&
+                this.BrandOverTime == -1 ? true : HiResTimer.GetTick() <= this.BrandOverTime
+            ) : true
             if (hasSoulFlareBuff) {
                 if (!hasLeechBuff) {
                     allowLeech := true
@@ -485,34 +498,42 @@ class LogicEngine extends LogicRunner {
              * 1.1 
              * 2. Leech图标未好
              */
-            
+
 
             if (allowLeech) {
                 if (preLeech && !LeechReady) {
-                    OutputDebug "waiting Leech"
+                    ; OutputDebug "waiting Leech"
                     return true
                 }
 
-                ; 4. 當Dragoncall暴擊之後,一定時間內不使用OPEN
+                ; 4. 當Dragoncall暴擊之後,一定時間內不使用Leech
                 local critical_Dragon_flag := this.g_limitationLeech ? !(
-                    HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= DragoncallConfig.Dragoncall_Bridge_Limit 
+                    HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= DragoncallConfig.Dragoncall_Bridge_Limit
                 ) : true
 
                 ; 3. 當Dragoncall小於指定百分比cd的 -> flag-3
-                local dragoncall_ready_flag := this.g_limitationLeech ? StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_Mid", false) : true
+                local dragoncall_ready_flag := this.g_limitationLeech ? (StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_Mid", false)) : true
 
+                if (hasLeechBuff)
+                    OutputDebug "[hasLeechBuff]: dragoncallReady: " dragoncall_ready_flag ", CriticalDragoncall: " critical_Dragon_flag
 
+                local finally_limit_leech := hasLeechBuff ? (dragoncall_ready_flag && critical_Dragon_flag) : true
+                ; 失敗說明是有buff的情況下並且可以使用LEECH的情況下並且限制條件不滿足,因此可以繼續往下走
+                if (hasLeechBuff && !finally_limit_leech) {
+                    OutputDebug "[LimitLeech] skip cur Leech"
+                    return false
+                }
 
-                if (preLeech && LeechReady && HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) >= LOGIC_INTERVAL && dragoncall_ready_flag && critical_Dragon_flag) {
+                if (preLeech && LeechReady && HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) >= LOGIC_INTERVAL && finally_limit_leech) {
                     this.SendKey("f", "LogEngine-Send-Leech")
                     this.lastUsedLeech := HiResTimer.GetTick()
                     this.g_Mutex.OnExecuted(3)
-                    OutputDebug "use Leech, " HiResTimer.GetTick()
+                    ; OutputDebug "use Leech, " HiResTimer.GetTick()
                     this.flag_press_leech := true
                     return true
                 }
             }
-            OutputDebug "skip Leech"
+            ; OutputDebug "skip Leech"
             return false
 
         } finally {
@@ -627,7 +648,7 @@ class LogicEngine extends LogicRunner {
             return res
         } finally {
             this.writeLogEvent(HiResTimer.NowBeijing(), msg)
-            OutputDebug OutputMsg
+            ; OutputDebug OutputMsg
             PerformanceMonitor.End("LogEngine-HandleSleep")
         }
     }
@@ -665,7 +686,7 @@ class LogicEngine extends LogicRunner {
             }
         } finally {
             this.writeLogEvent(HiResTimer.NowBeijing(), logMsg)
-            OutputDebug(OutputMsg)
+            ; OutputDebug(OutputMsg)
             PerformanceMonitor.End("LogEngine-HandleSleep")
         }
     }
@@ -729,14 +750,14 @@ class LogicEngine extends LogicRunner {
             if (!this.g_Mutex.isSFirst)
                 this.SendKey("e", "LogEngine-SendSoul-flare-E")
             this.SendKey("{tab}", "LogEngine-SendSoul-flare-TAB")
-            OutputDebug "use SoulFlare, " HiResTimer.GetTick()
+            ; OutputDebug "use SoulFlare, " HiResTimer.GetTick()
             this.lastUsedSoulFlare := HiResTimer.GetTick()
             this.g_Mutex.OnExecuted(2)
             SetTimer ObjBindMethod(this, "SetMarkToFalse"), -500
         }
     }
 
-    static SetMarkToFalse(){
+    static SetMarkToFalse() {
         this.g_Mutex.isSFirst := false
         this.delayTab := 0
     }
