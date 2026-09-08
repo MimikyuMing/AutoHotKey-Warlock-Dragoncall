@@ -98,6 +98,10 @@ class LogicEngine extends LogicRunner {
     static _Open() {
         PerformanceMonitor.Start("LogEngine-Logic-Open")
         try {
+            ; 當沒有勾選GoldOpen的時候,跳過使用OPEN邏輯執行
+            if(this.g_Gold_Open){
+                return
+            }
             ; 1. 當擁有Leech Buff的時候並且擁有Open圖標 -> flag-1
             hasLeechBuff := StateManager._buffState.Get("Leech", false)
             OpenReady := StateManager._skillState.Get("Open_R", false)
@@ -114,12 +118,12 @@ class LogicEngine extends LogicRunner {
 
 
             ; 4. 當Dragoncall暴擊之後,一定時間內不使用OPEN
-            local critical_Dragon_flag := !(
+            local critical_Dragon_flag := this.g_limitationOpen ? !(
                 HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= DragoncallConfig.Dragoncall_Bridge_Limit
-            )
+            ) : true
 
             ; 3. 當Dragoncall小於指定百分比cd的 -> flag-3
-            local dragoncall_ready_flag := StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_Mid", false)
+            local dragoncall_ready_flag := this.g_limitationOpen ? StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_Mid", false) : true
 
             ; OutputDebug dragoncall_ready_flag
 
@@ -489,9 +493,17 @@ class LogicEngine extends LogicRunner {
                     return true
                 }
 
-                
+                ; 4. 當Dragoncall暴擊之後,一定時間內不使用OPEN
+                local critical_Dragon_flag := this.g_limitationLeech ? !(
+                    HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= DragoncallConfig.Dragoncall_Bridge_Limit 
+                ) : true
 
-                if (preLeech && LeechReady && HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) >= LOGIC_INTERVAL) {
+                ; 3. 當Dragoncall小於指定百分比cd的 -> flag-3
+                local dragoncall_ready_flag := this.g_limitationLeech ? StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_Mid", false) : true
+
+
+
+                if (preLeech && LeechReady && HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) >= LOGIC_INTERVAL && dragoncall_ready_flag && critical_Dragon_flag) {
                     this.SendKey("f", "LogEngine-Send-Leech")
                     this.lastUsedLeech := HiResTimer.GetTick()
                     this.g_Mutex.OnExecuted(3)
