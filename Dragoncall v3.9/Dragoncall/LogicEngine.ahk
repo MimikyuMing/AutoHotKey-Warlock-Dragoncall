@@ -105,8 +105,12 @@ class LogicEngine extends LogicRunner {
 
             ; 2. 當上一次使用Leech的時間處於[Leech Sleep + 0.5s,Leech Sleep + 0.5s + 3s]的時候 -> flag-2
             local open_Leech_Disable_Window := this.g_Mutex.leechSleepTime + 500 ; 使用Leech之後 0.8+0.5s內不使用Open
-            local open_Leech_Window_Timing := this.g_Gold_Leech ? open_Leech_Disable_Window + (18-12) * 1000 : open_Leech_Disable_Window + 3000 ; 在使用Leech的0~3s內才可以使用open
-            local using_flag := open_Leech_Disable_Window <= HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) && HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) <= open_Leech_Window_Timing
+            local open_Leech_Window_Timing := open_Leech_Disable_Window + 3000 ; 在使用Leech的0~3s內才可以使用open
+
+            ; 当有GOLDLEECH的时候,只要有Leechbuff就直接使用
+            local using_flag := open_Leech_Disable_Window <= HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) && (
+                this.g_Gold_Leech ? hasLeechBuff : HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) <= open_Leech_Window_Timing
+            )
 
 
             ; 4. 當Dragoncall暴擊之後,一定時間內不使用OPEN
@@ -116,6 +120,8 @@ class LogicEngine extends LogicRunner {
 
             ; 3. 當Dragoncall小於指定百分比cd的 -> flag-3
             local dragoncall_ready_flag := StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_Mid", false)
+
+            ; OutputDebug dragoncall_ready_flag
 
 
             ; 5. 當處於SoulFlare buff的時候,可選是否使用Open
@@ -160,6 +166,12 @@ class LogicEngine extends LogicRunner {
      * 1. 當掠奪可用的時候,立即使用sf
      * 2. 當處於掠奪使用時,立即使用sf
      * 3. 當掠奪不可用的時候,不使用sf
+     * 
+     * 1. 當擁有GOLD LEECH之後,SF應該在LEECH之後使用
+     * 2. 當LEECH可用的時候,延遲使用SF
+     * 3. 當處於LEECH使用時,延遲使用SF
+     * 4. 當LEECH不可用的時候,不使用SF
+     * 5. 當LEECH BUFF存在的時候,並且上一次使用時間<=n的時候,立即使用
      */
     static _SoulFlare() {
         PerformanceMonitor.Start("LogEngine-Logic-SouFlare")
@@ -185,8 +197,20 @@ class LogicEngine extends LogicRunner {
                 delaySoulFlare := this.g_Gold_Leech
 
                 if (soulflare_available) {
-                    if (delaySoulFlare && this.g_Mutex.isSFirst && this.delayTab == 0) {
-                    ; if (delaySoulFlare && this.delayTab == 0) {
+                    if(hasLeechBuff){
+                        this.DelaySendTab()
+                        return 
+                    }
+                    ; else if (delaySoulFlare && this.g_Mutex.isSFirst && this.delayTab == 0) {
+
+                    ;Leech之后的1~2.5s内禁用
+                    local disableUsedSF := !(1000 <= HiResTimer.DeltaMs(this.lastUsedLeech + this.g_Mutex.leechSleepTime, HiResTimer.GetTick()) && HiResTimer.DeltaMs(this.lastUsedLeech + this.g_Mutex.leechSleepTime, HiResTimer.GetTick()) <= 2500)
+                    OutputDebug disableUsedSF
+                    if(delaySoulFlare && this.delayTab == 0 && disableUsedSF){
+                        return
+                    }
+
+                    if (delaySoulFlare && this.delayTab == 0) {
                         this.delayTab := SetTimer(() => this.DelaySendTab(), -1500)
                     } else {
                         this.DelaySendTab()
@@ -226,7 +250,7 @@ class LogicEngine extends LogicRunner {
                 critical_Dragon_flag := false
 
                 ; 當上一次使用Dragoncall的時間小於GCD,則不使用v
-                local wingstorm_GCD := 550
+                local wingstorm_GCD := 550 - 200
                 wingstorm_gcd_flag := HiResTimer.DeltaMs(
                     Max(this.lastUsedDragoncall, this.lastUsedWingstorm), HiResTimer.GetTick()
                 ) <= wingstorm_GCD
