@@ -15,7 +15,11 @@ class CaptureEngine extends CaptureClient {
     static g_LastUpdateStateTime := 0
     static skillNames := [], skillIdx := Map()
     static buffNames := [], buffIdx := Map()
+    static coldDownNames := [], coldDownIdx := Map()
     static DetectTimer := 0
+    static debugShowSlots := false ; DEBUG: 是否显示技能槽信息
+    static debugShowSlotsInterval := 50 ; DEBUG: 显示技能槽信息的间隔（毫秒）
+    static debugLastShowTime := 0 ; DEBUG: 上次显示技能槽信息的时间戳
 
     static Start() {
         ; 直接调用基类的静态方法
@@ -23,11 +27,13 @@ class CaptureEngine extends CaptureClient {
 
         local idx := CaptureClient.BuildNameIndex()
         this.skillNames := idx.skillNames
-        this.skillIdx   := idx.skillIdx
-        this.buffNames  := idx.buffNames
-        this.buffIdx    := idx.buffIdx
+        this.skillIdx := idx.skillIdx
+        this.buffNames := idx.buffNames
+        this.buffIdx := idx.buffIdx
+        this.coldDownNames := idx.coldDownNames
+        this.coldDownIdx := idx.coldDownIdx
         ; 启动定时器
-        interval := DETECT_INTERVAL   
+        interval := DETECT_INTERVAL
         this.DetectTimer := SetTimer(ObjBindMethod(CaptureEngine, "UpdateState"), interval)
         ; for name in CaptureEngine.skillNames
         ;     OutputDebug "Skill: " name
@@ -42,7 +48,7 @@ class CaptureEngine extends CaptureClient {
         local start := HiResTimer.GetTick()
 
         ; 同步状态到 StateManager
-        CaptureClient.SyncStates(frameData, this.skillIdx, this.buffIdx)
+        CaptureClient.SyncStates(frameData, this.skillIdx, this.buffIdx, this.coldDownIdx)
 
         this.frameId := frameData.frameId
         this.g_CurrentFocus := frameData.focus
@@ -55,44 +61,28 @@ class CaptureEngine extends CaptureClient {
          * 3. 
          */
         static logicOffStart := -1
-        if(!LogicEngine.g_LogicEnabled){
+        if (!LogicEngine.g_LogicEnabled) {
             if (logicOffStart == -1)
                 logicOffStart := HiResTimer.GetTick()
-            
+
         }
-        if(LogicEngine.g_LogicEnabled && !LogicEngine.g_Mutex.isSFirst){
-            if(HiResTimer.DeltaMs(logicOffStart, HiResTimer.GetTick()) >= 5 * 1000){
+        if (LogicEngine.g_LogicEnabled && !LogicEngine.g_Mutex.isSFirst) {
+            if (HiResTimer.DeltaMs(logicOffStart, HiResTimer.GetTick()) >= 5 * 1000) {
                 LogicEngine.g_Mutex.MarkSFirst()
             }
             logicOffStart := -1
         }
         static l := -1
-        if(!LogicEngine.g_Mutex.isSFirst){
+        if (!LogicEngine.g_Mutex.isSFirst) {
             OutputDebug "state: " LogicEngine.g_Mutex.isSFirst " , timestamp: " HiResTimer.GetTick() " , logicOffStart: " logicOffStart
             l := HiResTimer.GetTick()
         }
-            
-
-
 
 
         ; 首次观察到Dragoncall亮起
-        Dragoncall_Bridge := StateManager._skillState.Get("Dragoncall_L_Bridge", false)
-        ; if(Dragoncall_Bridge){
-        ;     if(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd == -1){
-        ;         DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd := HiResTimer.GetTick()
-        ;         OutputDebug "首次观察到Dragoncall亮起,记录时间戳: " DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd
-        ;     }else {
-        ;         ; 有值,判断是否超过ResetLimit阈值,重置
-        ;         if(HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) >= DragoncallConfig.Dragoncall_Bridge_Limit_Reset){
-        ;             ; Reset
-        ;             DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd := HiResTimer.GetTick()
-        ;             OutputDebug "Dragoncall亮起时间超过阈值，重置时间戳: " DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd
-        ;         }
-        ;     }
-
-        ; }
-        if(Dragoncall_Bridge && !(HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= 10)){
+        Dragoncall_Bridge := StateManager._skillState.Get("Critical_Dragoncall", false)
+        
+        if (Dragoncall_Bridge && !(HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= 10)) {
             DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd := HiResTimer.GetTick()
         }
 
