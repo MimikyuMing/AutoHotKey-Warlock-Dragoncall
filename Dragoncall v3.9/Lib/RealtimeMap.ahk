@@ -20,15 +20,24 @@ class RealtimeMap extends Map {
     ; 覆盖 Get 方法
     Get(key, default?) {
         if (this.realtimeMode && this.type) {
-            ; 获取缓存帧（极快，同一帧内只读一次共享内存）
             frameData := CaptureClient.GetCachedFrame()
             if IsObject(frameData) {
                 PerformanceMonitor.Start("RealtimeMap-RealtimeGet")
                 idx := this.idxMap.Get(key, -1)
                 result := false
                 if idx >= 0 {
-                    bytes := (this.type == "skill") ? frameData.skillBytes : frameData.buffBytes
-                    if idx < bytes.Size
+                    bytes := 0
+                    switch this.type {
+                        case "skill":
+                            bytes := frameData.skillBytes
+                        case "buff":
+                            bytes := frameData.buffBytes
+                        case "coldDown":
+                            bytes := frameData.coldDownBytes
+                        default:
+                            bytes := 0
+                    }
+                    if bytes != 0 && idx < bytes.Size
                         result := NumGet(bytes, idx, "UChar") != 0
                 }
                 PerformanceMonitor.End("RealtimeMap-RealtimeGet")
@@ -36,7 +45,6 @@ class RealtimeMap extends Map {
             }
             return false
         }
-        ; 缓存模式
         return IsSet(default) ? super.Get(key, default) : super.Get(key)
     }
 
