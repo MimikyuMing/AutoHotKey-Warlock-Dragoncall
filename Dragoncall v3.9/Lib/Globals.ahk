@@ -3,8 +3,8 @@
 ; Globals.ahk
 global GAME_FRAME := 60
 global FRAME_MS := Floor(1000 / GAME_FRAME)
-global DETECT_INTERVAL := Floor(FRAME_MS * 0.30)
-global LOGIC_INTERVAL := Floor(FRAME_MS * 0.15)
+global DETECT_INTERVAL := Floor(FRAME_MS * 0.15)
+global LOGIC_INTERVAL := Floor(FRAME_MS * 0.5)
 global SYS_STANDBY := 0, SYS_ACTIVE := 1
 global g_SysState := SYS_STANDBY
 

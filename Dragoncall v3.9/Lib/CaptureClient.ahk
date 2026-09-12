@@ -1,32 +1,36 @@
 #Requires AutoHotkey v2.0
-
-
 #Include StateManager.ahk
 
-; Lib\CaptureClient.ahk
 class CaptureClient {
     static pView := 0
-    static hDll  := 0
-    static hMap  := 0
+    static hDll := 0
+    static hMap := 0
     static pStopCapture := 0
-
     static isValid := false
 
+    ; 共享内存布局常量（变长布局，数据区从 28 开始）
+    static OFFSET_FRAMEID   := 0
+    static OFFSET_TIMESTAMP := 4
+    static OFFSET_FOCUS     := 12
+    static OFFSET_SKILLCNT  := 16
+    static OFFSET_BUFFCNT   := 20
+    static OFFSET_COLDOWNCNT:= 24
+    static DATA_START       := 28
+    static MAX_SKILLS       := 128
+    static MAX_BUFFS        := 128
+    static MAX_COLDDOWNS    := 128
+    static TOTAL_SIZE       := 4096   ; 实际映射大小，读取时做边界检查
 
-    ; 帧缓存（静态）
+    ; 帧缓存
     static cachedFrameId := -1
     static cachedFrameData := false
-
     static RealtimeMode := 0
-
-
 
     static Start(dllPath, iniPath, mapName := "Local\DragoncallState") {
         this.hDll := DllCall("LoadLibrary", "Str", dllPath, "Ptr")
         if !this.hDll
             throw Error("无法加载 " . dllPath)
 
-        ; DLL 自定义导出函数保持 "Str"
         res := DllCall("CaptureLogic.dll\StartCapture", "Str", iniPath, "CDecl Int")
         if !res {
             DllCall("FreeLibrary", "Ptr", this.hDll)
@@ -77,15 +81,21 @@ class CaptureClient {
         }
     }
 
+    ; ---------- 导出函数访问 ----------
     static GetSkillCount() => DllCall("CaptureLogic.dll\GetSkillCount", "CDecl Int")
     static GetSkillName(idx) {
         ptr := DllCall("CaptureLogic.dll\GetSkillName", "Int", idx, "CDecl Ptr")
-        return StrGet(ptr, "UTF-8")
+        return ptr ? StrGet(ptr, "UTF-8") : ""
     }
     static GetBuffCount() => DllCall("CaptureLogic.dll\GetBuffCount", "CDecl Int")
     static GetBuffName(idx) {
         ptr := DllCall("CaptureLogic.dll\GetBuffName", "Int", idx, "CDecl Ptr")
-        return StrGet(ptr, "UTF-8")
+        return ptr ? StrGet(ptr, "UTF-8") : ""
+    }
+    static GetColdDownCount() => DllCall("CaptureLogic.dll\GetColdDownCount", "CDecl Int")
+    static GetColdDownName(idx) {
+        ptr := DllCall("CaptureLogic.dll\GetColdDownName", "Int", idx, "CDecl Ptr")
+        return ptr ? StrGet(ptr, "UTF-8") : ""
     }
 
     static BuildNameIndex() {
@@ -104,45 +114,59 @@ class CaptureClient {
             buffNames.Push(name)
             buffIdx[name] := A_Index - 1
         }
-        return {skillNames: skillNames, skillIdx: skillIdx,
-                buffNames: buffNames, buffIdx: buffIdx}
+
+        local coldDownNames := [], coldDownIdx := Map()
+        local cdc := this.GetColdDownCount()
+        loop cdc {
+            local name := this.GetColdDownName(A_Index - 1)
+            coldDownNames.Push(name)
+            coldDownIdx[name] := A_Index - 1
+        }
+
+        return { skillNames: skillNames, skillIdx: skillIdx,
+                 buffNames: buffNames, buffIdx: buffIdx,
+                 coldDownNames: coldDownNames, coldDownIdx: coldDownIdx }
     }
 
     static ReadFrame() {
         if !this.pView
             return false
 
-        local frameId := NumGet(this.pView, 0, "UInt")
-        local focus   := NumGet(this.pView, 12, "Int")
-        local sc      := NumGet(this.pView, 16, "UInt")
-        local bc      := NumGet(this.pView, 20, "UInt")
+        local frameId := NumGet(this.pView, this.OFFSET_FRAMEID, "UInt")
+        local focus   := NumGet(this.pView, this.OFFSET_FOCUS,   "Int")
+        local sc      := NumGet(this.pView, this.OFFSET_SKILLCNT, "UInt")
+        local bc      := NumGet(this.pView, this.OFFSET_BUFFCNT,  "UInt")
+        local cdc     := NumGet(this.pView, this.OFFSET_COLDOWNCNT, "UInt")
 
-        ; 如果捕获线程还没写入第一帧，所有值可能为 0
-        if (frameId == 0 && sc == 0 && bc == 0)
+        ; 合法性检查
+        if (sc > this.MAX_SKILLS || bc > this.MAX_BUFFS || cdc > this.MAX_COLDDOWNS)
             return false
 
-        ; 限制最大数量
-        if (sc > 128 || bc > 128)
-            return false
-
-        ; 检查总大小是否超出共享内存
-        if (24 + sc + bc + 12 > 4096)
-            return false
-
+        ; 计算数据区偏移
+        local offset := this.DATA_START
         local skillBytes := Buffer(sc, 0)
-        if (sc > 0)
-            DllCall("RtlMoveMemory", "Ptr", skillBytes, "Ptr", this.pView + 24, "UPtr", sc)
+        local buffBytes  := Buffer(bc, 0)
+        local coldDownBytes := Buffer(cdc, 0)
 
-        local buffBytes := Buffer(bc, 0)
-        if (bc > 0)
-            DllCall("RtlMoveMemory", "Ptr", buffBytes, "Ptr", this.pView + 24 + sc, "UPtr", bc)
+        ; 逐字节读取（稳妥，避免指针运算问题）
+        Loop sc
+            NumPut("UChar", NumGet(this.pView, offset + A_Index - 1, "UChar"), skillBytes, A_Index - 1)
+        offset += sc
+        Loop bc
+            NumPut("UChar", NumGet(this.pView, offset + A_Index - 1, "UChar"), buffBytes, A_Index - 1)
+        offset += bc
+        Loop cdc
+            NumPut("UChar", NumGet(this.pView, offset + A_Index - 1, "UChar"), coldDownBytes, A_Index - 1)
 
-        return {frameId: frameId, focus: focus, skillBytes: skillBytes, buffBytes: buffBytes}
+        return { frameId: frameId, focus: focus,
+                 skillBytes: skillBytes, buffBytes: buffBytes,
+                 coldDownBytes: coldDownBytes }
     }
 
-    static SyncStates(frameData, skillIdx, buffIdx) {
+    static SyncStates(frameData, skillIdx, buffIdx, coldDownIdx := "") {
         local sc := frameData.skillBytes.Size
         local bc := frameData.buffBytes.Size
+        local cdc := frameData.coldDownBytes.Size
 
         for name, idx in skillIdx {
             local state := (idx < sc) ? NumGet(frameData.skillBytes, idx, "UChar") : 0
@@ -152,23 +176,24 @@ class CaptureClient {
             local state := (idx < bc) ? NumGet(frameData.buffBytes, idx, "UChar") : 0
             StateManager._buffState[name] := state
         }
+        if (coldDownIdx != "") {
+            for name, idx in coldDownIdx {
+                local state := (idx < cdc) ? NumGet(frameData.coldDownBytes, idx, "UChar") : 0
+                StateManager._coldDownState[name] := state
+            }
+        }
         StateManager._focusState.currentLevel := frameData.focus
     }
 
-
-        ; 获取当前帧数据（同一帧内只读取一次共享内存）
     static GetCachedFrame() {
-
         if !this.isValid || !this.pView
             return false
 
-        ; 安全读取帧 ID
         frameId := NumGet(this.pView, 0, "UInt")
         if (frameId != this.cachedFrameId) {
             this.cachedFrameData := this.ReadFrame()
             this.cachedFrameId := frameId
         }
         return this.cachedFrameData
-
     }
 }

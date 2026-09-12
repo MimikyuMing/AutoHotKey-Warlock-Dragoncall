@@ -2,17 +2,17 @@
 ; Lib\StatusMonitor.ahk
 
 class StatusMonitor {
-    timer      := 0
-    interval   := 1000
+    timer := 0
+    interval := 1000
     clearTimer := 0
-    x          := 0
-    y          := 0
-    dataMap    := Map()
-    obj        := 0          
+    x := 0
+    y := 0
+    dataMap := Map()
+    obj := 0
     displayDuration := 1000
-    hwnd          := 0           ; 目标窗口句柄（0=屏幕绝对坐标；非0=窗口相对坐标，且仅在该窗口聚焦时显示）
+    hwnd := 0           ; 目标窗口句柄（0=屏幕绝对坐标；非0=窗口相对坐标，且仅在该窗口聚焦时显示）
 
-    Start(obj, displayDuration:=1000, intervalMs := 1000, posX := 0, posY := 0, hwndTarget := 0) {
+    Start(obj, displayDuration := 1000, intervalMs := 1000, posX := 0, posY := 0, hwndTarget := 0) {
         this.Stop()
         if IsSet(obj)
             this.obj := obj
@@ -54,30 +54,29 @@ class StatusMonitor {
     }
 
     Refresh() {
-        if this.hwnd && !WinActive("ahk_id " this.hwnd) {
-            ToolTip("")
+        if !this.hwnd {
+            ToolTip()    ; 清除已有 ToolTip
+            return
+        }
+        if !WinActive("ahk_id " this.hwnd) {
+            ToolTip()
             return
         }
 
-        screenX := 0, screenY := 0
-        if this.hwnd {
-            ; 窗口相对模式：实时获取窗口位置
-            WinGetPos(&wx, &wy, &ww, &wh, this.hwnd)
-            if (wx < -10000 || wy < -10000) {   ; 最小化/隐藏
-                ToolTip("")
-                return
-            }
-            screenX := wx + this.x
-            screenY := wy + this.y
-        } else {
-            ; 屏幕绝对模式
-            screenX := this.x
-            screenY := this.y
+        WinGetPos(&wx, &wy, &ww, &wh, this.hwnd)
+        if (wx < -10000 || wy < -10000) {   ; 最小化/隐藏
+            ToolTip()
+            return
         }
 
-        ; 如果绑定了对象且有 LogicEnabled 属性，可在此过滤（可选）
+        screenX := wx + this.x
+        screenY := wy + this.y
+
         content := this.Report()
-        ToolTip(content, screenX, screenY)
+        if (content = "")
+            ToolTip()
+        else
+            ToolTip(content, screenX, screenY)
 
         ; 鼠标穿透处理
         DetectHiddenWindows(true)

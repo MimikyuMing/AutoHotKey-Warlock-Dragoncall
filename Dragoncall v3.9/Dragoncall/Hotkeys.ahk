@@ -22,37 +22,62 @@ $*XButton2 Up:: {
 ; 鼠标侧键1模拟组合键
 $*XButton1:: SendInput '^{Numpad9}'
 
-~$X::{
+~$X:: {
     ; MsgBox "HELLO WORLD"
-    LogicEngine.g_Mutex.SetSleep(5, LogicEngine.g_Mutex.xSleepTime)
+    TetherBladeReady := StateManager._skillState.Get("TetherBlade", false)
+    if (TetherBladeReady) {
+        LogicEngine.g_Mutex.SetSleep(5, LogicEngine.g_Mutex.xSleepTime)
+        if (LogicEngine.BrandTriggerTime <= HiResTimer.GetTick()) {
+            LogicEngine.BrandTriggerTime := HiResTimer.GetTick()
+            temp := HiResTimer.AddMs(4 * 1000, LogicEngine.BrandTriggerTime)
+            if (temp >= LogicEngine.BrandOverTime) {
+                LogicEngine.BrandOverTime := temp
+            }
+        }
+    }
 }
+
+~$2:: {
+    ; MsgBox "HELLO WORLD"
+    SoulShackleReady := StateManager._skillState.Get("SoulShackle", false)
+    if (SoulShackleReady) {
+        if (LogicEngine.BrandTriggerTime <= HiResTimer.GetTick()) {
+            LogicEngine.BrandTriggerTime := HiResTimer.GetTick()
+            temp := HiResTimer.AddMs(8 * 1000, LogicEngine.BrandTriggerTime)
+            if (temp >= LogicEngine.BrandOverTime) {
+                LogicEngine.BrandOverTime := temp
+            }
+        }
+    }
+}
+
 
 F11:: {
     App.Cleanup()
     Reload
 }
 
-~$F::{
+~$F:: {
     LeechReady := StateManager._skillState.Get("Leech_R", false)
-    if(LeechReady){
+    if (LeechReady) {
         LogicEngine.lastUsedLeech := HiResTimer.GetTick()
-        local LeechAfterBanAction4 := 800
-        local LeechAfterBanMantraAndRupture := 1000 ; Ban 真言和破裂
-
-        LogicEngine.usedLeechAfterBanAction4 := HiResTimer.AddMs(LogicEngine.lastUsedLeech, LeechAfterBanAction4)
-                        LogicEngine.usedLeechAfterBanMantraAndRupture := HiResTimer.AddMs(LogicEngine.lastUsedLeech, LeechAfterBanMantraAndRupture)
         LogicEngine.g_Mutex.OnExecuted(3)
     }
 }
 
 
-~$Tab::{
+~$Tab:: {
     soulFlareReady := StateManager._skillState.Get("SoulFlare", false)
-    if(soulFlareReady){
+    if (soulFlareReady) {
         LogicEngine.g_Mutex.OnExecuted(2)
-        local SoulFlareAfterBanAction4 := 1000
-        LogicEngine.usedSoulFlareAfterBanAction4 := HiResTimer.AddMs(SoulFlareAfterBanAction4, LogicEngine.lastUsedSoulFlare)
-        SetTimer(() => (LogicEngine.g_Mutex.isSFirst := false), -1000)
+        SetTimer ObjBindMethod(LogicEngine, "SetMarkToFalse"), -500
     }
 }
 
+~$3:: {
+    OpenReady := StateManager._skillState.Get("Open_R", false)
+    if (OpenReady) {
+        LogicEngine.g_Mutex.OnExecuted(5)
+        LogicEngine.lastUsedOpen := HiResTimer.GetTick()
+    }
+}

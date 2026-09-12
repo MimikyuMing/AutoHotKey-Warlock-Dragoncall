@@ -87,6 +87,9 @@ class App {
         intervalMs := 100
         posX := 720
         posY := 570
+
+        posX := 942 - 10 + 2
+        posY := 495 - 30
         duration := 1000
         monitior := DragoncallStatusMonitor()
         monitior.Start(LogicEngine, duration, intervalMs, posX, posY)
@@ -94,6 +97,8 @@ class App {
         OnExit App.Cleanup
         if (this.debugMode)
             OutputDebug "Step 18: Init complete"
+
+        LogicEngine.InitLastUsed()
         
     }
 
@@ -111,6 +116,9 @@ class App {
         LogicEngine.g_limitationOpen := ParseBool(settings.Has("LimitationOpen") ? settings["LimitationOpen"] : false)
         LogicEngine.g_limitationLeech := ParseBool(settings.Has("LimitationLeech") ? settings["LimitationLeech"] : false)
         LogicEngine.g_enablePriorityUseDragoncall := ParseBool(settings.Has("EnablePriorityUseDragoncall") ? settings["EnablePriorityUseDragoncall"] : false)
+        LogicEngine.g_isUseOpenHasSoulFlareBuff := ParseBool(settings.Has("isUseOpenHasSoulFlareBuff") ? settings["isUseOpenHasSoulFlareBuff"] : false)
+        LogicEngine.g_isUsedLeechFromMySelf := ParseBool(settings.Has("isUsedLeechFromMySelf") ? settings["isUsedLeechFromMySelf"] : false)
+        
 
         ; 模式設定
         LogicEngine.isUsedInputQueue := ParseBool(settings.Has("IsUsedInputQueue") ? settings["IsUsedInputQueue"] : false)
