@@ -43,6 +43,8 @@ class LogicEngine extends LogicRunner {
     static flag_press_open := 0
     static flag_press_leech := 0
 
+    static leechBuffDuration := this.g_Gold_Leech ? 18 : 15 ;s
+
     ; ---------- 实现抽象方法 ----------
     static _MainLogic() {
         PerformanceMonitor.Start("LogEngine-MainLogic")
@@ -70,9 +72,9 @@ class LogicEngine extends LogicRunner {
                 return
             ; ---------- 5. Action2 : Soulflare 超神 ----------
             LogicEngine._SoulFlare()
-            ; ---------- 6. Action1 : Dragoncall & Wingstorm ----------
+            ; ; ---------- 6. Action1 : Dragoncall & Wingstorm ----------
             LogicEngine._DragoncallOrWingstorm()
-            ; ---------- 7. Action3 : Leech 掠夺 ----------
+            ; ; ---------- 7. Action3 : Leech 掠夺 ----------
             if (LogicEngine._Leech())
                 return
             ; ---------- 8. Action4 : Mantra/Rupture/Bombardment ----------
@@ -102,6 +104,12 @@ class LogicEngine extends LogicRunner {
             if (!this.g_Gold_Open) {
                 return
             }
+
+            IsColdDownSoulFlare:= StateManager._coldDownState.Get("SoulFlare", false)
+            SoulFlareReady := StateManager._skillState.Get("SoulFlare", false)
+            if(!IsColdDownSoulFlare && !SoulFlareReady){
+                return
+            }
             ; 1. 當擁有Leech Buff的時候並且擁有Open圖標 -> flag-1
             hasLeechBuff := StateManager._buffState.Get("Leech", false)
             OpenReady := StateManager._skillState.Get("Open_R", false)
@@ -116,14 +124,8 @@ class LogicEngine extends LogicRunner {
                 this.g_Gold_Leech ? hasLeechBuff : HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) <= open_Leech_Window_Timing
             )
 
-
-            ; 4. 當Dragoncall暴擊之後,一定時間內不使用OPEN
-            local critical_Dragon_flag := this.g_limitationOpen ? !(
-                HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= DragoncallConfig.Dragoncall_Bridge_Limit
-            ) : true
-
-            ; 3. 當Dragoncall小於指定百分比cd的 -> flag-3
-            local dragoncall_ready_flag := this.g_limitationOpen ? StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_Mid", false) : true
+            ; Limit 暴擊龍/當前cd>=閾值 -> 不可使用Open
+            local LimitUsedOpen := this._LimitLeechOrOpenCondition(this.g_limitationOpen, true)
 
             ; OutputDebug dragoncall_ready_flag
 
@@ -132,23 +134,10 @@ class LogicEngine extends LogicRunner {
             hasSoulFlareBuff := StateManager._buffState.Get("SoulFlare", false)
             local soulflare_flag := this.g_isUseOpenHasSoulFlareBuff ? true : !hasSoulFlareBuff
 
-            ; if(using_flag){
-            ;     msg :=
-            ;     "ready_flag:" ready_flag .
-            ;     ",critical_Dragon_flag:" critical_Dragon_flag .
-            ;     ",critical_Dragon_flag:" critical_Dragon_flag .
-            ;     ",dragoncall_ready_flag:" dragoncall_ready_flag .
-            ;     ",soulflare_flag:" soulflare_flag
-
-            ;     OutputDebug msg
-            ; }
-
-
             local open_available :=
                 ready_flag && ; 圖標+buff就緒
                 using_flag && ; 使用時機
-                critical_Dragon_flag && ; 暴擊龍
-                dragoncall_ready_flag && ; 龍小於指定百分比
+                LimitUsedOpen &&
                 soulflare_flag
 
             if (this.g_Mutex.CanExecute(5) && open_available) {
@@ -321,7 +310,7 @@ class LogicEngine extends LogicRunner {
         PerformanceMonitor.Start("LogEngine-Logic-Action4")
         try {
             ; 當使用Open之後,opensleeptime + 10ms內不使用action4
-            local OpenAfterBanAction4 := 10
+            local OpenAfterBanAction4 := 10 
             action4_unavailable_1 := HiResTimer.DeltaMs(this.lastUsedOpen, HiResTimer.GetTick()) <= (this.g_Mutex.openSleepTime + OpenAfterBanAction4)
 
             if (action4_unavailable_1) {
@@ -364,18 +353,8 @@ class LogicEngine extends LogicRunner {
                 else if (!hasSoulFlareBuff && hasLeechBuff) {
                     ; INI是否允许使用L? -yes-> return
                     if (this.g_isUseLeechHasLeechBuff) {
-                        ; 4. 當Dragoncall暴擊之後,一定時間內不使用Leech
-                        local critical_Dragon_flag := this.g_limitationLeech ? !(
-                            HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= DragoncallConfig.Dragoncall_Bridge_Limit
-                        ) : true
-
-                        ; 3. 當Dragoncall小於指定百分比cd的 -> flag-3
-                        local dragoncall_ready_flag := this.g_limitationLeech ? (StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_Mid", false)) : true
-
-                        local finally_limit_leech := hasLeechBuff ? (dragoncall_ready_flag && critical_Dragon_flag) : true
-                        if(!finally_limit_leech){
-                            ; continue
-                        }else{
+                        local LimitUsedLeech := this._LimitLeechOrOpenCondition(this.g_limitationLeech)
+                        if(LimitUsedLeech){
                             return
                         }
                     } else {
@@ -427,10 +406,11 @@ class LogicEngine extends LogicRunner {
             cap_res := Max(MantraGCD, RuptureGCD)
             cap_res := Max(cap_res, LeechGCD)
 
-            if (HiResTimer.GetTick() < cap_res) {
-                return
-            }
+            ; if (HiResTimer.GetTick() < cap_res) {
+            ;     return
+            ; }
             local BombardLimit := LOGIC_INTERVAL * 0.5
+            BombardLimit := 0
             if (bombardment_available && HiResTimer.AddMs(BombardLimit, this.lastUsedBombardment) >= this.lastUsedBombardment) {
                 this.SendKey("t", "LogEngine-Send-Bombardment")
                 this.g_Mutex.OnExecuted(4)
@@ -471,12 +451,14 @@ class LogicEngine extends LogicRunner {
             hasLeechBuff := StateManager._buffState.Get("Leech", false)
             hasSoulFlareBuff := StateManager._buffState.Get("SoulFlare", false)
             allowLeech := false
+
             local allowUsedLeechFromMySelf := this.g_isUsedLeechFromMySelf ?
             (
                 this.BrandTriggerTime <= HiResTimer.GetTick()
                 &&
                 this.BrandOverTime == -1 ? true : HiResTimer.GetTick() <= this.BrandOverTime
             ) : true
+
             if (hasSoulFlareBuff) {
                 if (!hasLeechBuff) {
                     allowLeech := true
@@ -486,12 +468,14 @@ class LogicEngine extends LogicRunner {
                     allowLeech := true
                 }
                 else if (this.g_isUseLeechHasLeechBuff && hasLeechBuff && allowUsedLeechFromMySelf) {
-                    allowLeech := true
+                    local LimitUsedLeech := this._LimitLeechOrOpenCondition(this.g_limitationLeech)
+                    allowLeech := true && LimitUsedLeech
                 }
                 else {
                     allowLeech := false
                 }
             }
+            allowLeech := allowLeech
 
             /**
              * 1. Leech图标就绪
@@ -506,25 +490,7 @@ class LogicEngine extends LogicRunner {
                     return true
                 }
 
-                ; 4. 當Dragoncall暴擊之後,一定時間內不使用Leech
-                local critical_Dragon_flag := this.g_limitationLeech ? !(
-                    HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) <= DragoncallConfig.Dragoncall_Bridge_Limit
-                ) : true
-
-                ; 3. 當Dragoncall小於指定百分比cd的 -> flag-3
-                local dragoncall_ready_flag := this.g_limitationLeech ? (StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_Mid", false)) : true
-
-                if (hasLeechBuff)
-                    OutputDebug "[hasLeechBuff]: dragoncallReady: " dragoncall_ready_flag ", CriticalDragoncall: " critical_Dragon_flag
-
-                local finally_limit_leech := hasLeechBuff ? (dragoncall_ready_flag && critical_Dragon_flag) : true
-                ; 失敗說明是有buff的情況下並且可以使用LEECH的情況下並且限制條件不滿足,因此可以繼續往下走
-                if (hasLeechBuff && !finally_limit_leech) {
-                    OutputDebug "[LimitLeech] skip cur Leech"
-                    return false
-                }
-
-                if (preLeech && LeechReady && HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) >= LOGIC_INTERVAL && finally_limit_leech) {
+                if (preLeech && LeechReady && HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) >= LOGIC_INTERVAL) {
                     this.SendKey("f", "LogEngine-Send-Leech")
                     this.lastUsedLeech := HiResTimer.GetTick()
                     this.g_Mutex.OnExecuted(3)
@@ -540,44 +506,6 @@ class LogicEngine extends LogicRunner {
             PerformanceMonitor.End("LogEngine-Logic-Leech")
 
         }
-
-        ; hasLeechBuff := StateManager._buffState.Get("Leech", false)
-        ; hasSoulFlareBuff := StateManager._buffState.Get("SoulFlare", false)
-
-        ; preLeech := StateManager._skillState.Get("Leech_Dark_L", false) || StateManager._skillState.Get("Leech_L", false)
-        ; LeechReady := StateManager._skillState.Get("Leech_R", false)
-        ; leech_condition := this.g_limitationLeech
-        ;     ? StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_R", false) && !StateManager._skillState.Get("Dragoncall_Mid", false)
-        ;     : true
-        ; allowLeech := false
-        ; soulFlareReady := this.g_AutoSoulFlare && StateManager._skillState.Get("SoulFlare", false)
-
-        ; if (this.g_Mutex.CanExecute(3) && preLeech) {
-        ;     if (hasSoulFlareBuff) {
-        ;         if (!hasLeechBuff)
-        ;             allowLeech := true
-        ;     } else if (!hasSoulFlareBuff) {
-        ;         if (!hasLeechBuff)
-        ;             allowLeech := true
-        ;         else if (this.g_isUseLeechHasLeechBuff && leech_condition)
-        ;             allowLeech := true
-        ;     }
-
-        ;     if (soulFlareReady) {
-        ;         return true
-        ;     }
-
-        ;     if (allowLeech) {
-        ;         if (LeechReady) {
-        ;             this.SendKey("f", "LogEngine-SendLeech")
-        ;             this.lastUsedLeech := HiResTimer.GetTick()
-        ;             this.g_Mutex.OnExecuted(3)
-        ;         } else {
-        ;             return true
-        ;         }
-        ;     }
-        ;     return false
-        ; }
     }
 
     static _Old_HandleSleepState() {
@@ -775,4 +703,180 @@ class LogicEngine extends LogicRunner {
         }
 
     }
+
+    /**
+     * return true表示可用Leech,False表示不可用Leech
+     * @param conditon 
+     * @returns {Boolean} 
+     */
+    static _LimitLeechOrOpenCondition(conditon, isOpen:=false){
+
+        if(!conditon){
+            return true
+        }
+
+        hasLeechBuff := StateManager._buffState.Get("Leech", false)
+        hasSoulFlareBuff := StateManager._buffState.Get("SoulFlare", false)
+        if(hasLeechBuff && (!hasSoulFlareBuff || isOpen)){
+             ; 4. 當Dragoncall暴擊之後,一定時間內不使用Leech ->true表示大於指定時間,可以使用Leech
+            local critical_Dragon_flag := HiResTimer.DeltaMs(DragoncallConfig.Dragoncall_Bridge_first_Observe_Reconrd, HiResTimer.GetTick()) >= DragoncallConfig.Dragoncall_Bridge_Limit
+
+            ; 3. 當Dragoncall小於指定百分比cd的 -> true表示當前Dragoncall的冷卻時間>=指定百分比,可以使用Leech
+            ; true 表示 L亮,MID不亮 -> cur cd < target -> used LimitSkill
+            local dragoncall_ready_flag := StateManager._skillState.Get("Dragoncall_L", false) && !StateManager._skillState.Get("Dragoncall_Mid", false)
+
+            ; 並且距離上次使用Leech的時間大於指定間隔,可以無視該條件
+            local trueLeechDuration := (this.leechBuffDuration - 2) * 1000 ; ms
+            ; TRUE表示跳过,FLASE表示不跳过
+            local skipLimitUseLeechCondition := HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) >= trueLeechDuration
+            ; 当(critical_Dragon_flag,dragoncall_ready_flag)其中一个满足的时候表示可以使用Leech
+            ; 當skipLimitUseLeechCondition满足的时候,无视后续的条件直接使用Leech
+            
+
+            ; 也就是說 三者有一者滿足即直接使用Leech
+            LimitLeechOrOpenCondition := (skipLimitUseLeechCondition ||  critical_Dragon_flag || dragoncall_ready_flag)
+
+
+            time := A_Hour ":"  A_Min  ":"  A_Sec  ":"  A_MSec
+            txt.= "[" time "] LastUsedLeech: " this.lastUsedLeech ", skipLimitUseLeechCondition: " skipLimitUseLeechCondition ", critical_Dragon_flag: " critical_Dragon_flag ", dragoncall_ready_flag: " dragoncall_ready_flag ", RES:" LimitLeechOrOpenCondition
+            OutputDebug txt
+
+            return LimitLeechOrOpenCondition
+        }
+        return true
+    }
+
+
+    ; static _Open_1(){
+    ;     PerformanceMonitor.Start("LogEngine-Logic-Open")
+    ;     try{
+    ;         ; 檢測是否啟用自動Open
+    ;         if(!this.g_Gold_Open){
+    ;             return
+    ;         }
+
+    ;         ; 1.檢測超神是否進入冷卻,進入冷卻則跳過邏輯,直接進行後續Action
+    ;         local IsColdDownSoulFlare:= StateManager._coldDownState.Get("SoulFlare", false)
+    ;         local SoulFlareReady := StateManager._skillState.Get("SoulFlare", false)
+    ;         ; 2.如果冷卻欄位沒有match到 並且 技能欄位中沒有超神圖標,則跳過當前邏輯,執行後續action
+    ;         if(!IsColdDownSoulFlare && !SoulFlareReady){
+    ;             return
+    ;         }
+    ;         ; 3.走主要逻辑
+    ;         hasLeechBuff := StateManager._buffState.Get("Leech", false)
+    ;         ; 3.1 检测当前使用Open时机是否符合条件
+    ;         ; 3.1.1 如果没有Gold——Leech的话，则可以按照15(SF+OP)-15-15(OP)-15的法则,进行分配，因此当前的时机是在掠夺后摇之后的0~3s使用Open
+    ;         local Disable_Window := this.g_Mutex.leechSleepTime + 500 ; 使用Leech之後 0.8+0.5s內不使用Open
+    ;         local Max_Window := Disable_Window + 3000 ; 在使用Leech的0~3s內才可以使用open
+    ;         local using_flag := Disable_Window <= HiResTimer.DeltaMs(this.g_Mutex.lastUsedLeech, HiResTimer.GetTick())
+    ;         if(!this.g_Gold_Leech){
+    ;             using_flag := using_flag && HiResTimer.DeltaMs(this.g_Mutex.lastUsedLeech, HiResTimer.GetTick()) <= Max_Window
+    ;         }
+    ;         ; 3.1.2 如果有GoldLeech则无视该条件
+    ;         if(this.g_Gold_Leech){
+    ;             using_flag := using_flag && hasLeechBuff
+    ;         }
+    ;         ; 3.2 检测当前是否处于Leech状态，并且Open是否已经准备就绪
+    ;         local ready_flag := hasLeechBuff && StateManager._skillState.Get("Open_R", false)
+    ;         ; 3.3 是否启用限制条件
+    ;         local LimitUsedOpen := _LimitLeechOrOpenCondition(this.g_limitationOpen, this.leechBuffDuration, this.g_Mutex.lastUsedLeech, true)
+
+
+    ;         ; 4. 最终聚合
+    ;         local available := ready_flag && LimitUsedOpen && using_flag
+
+    ;         if(this.g_Mutex.CanExecute(5) && available){
+    ;             this.SendKey("3", "LogEngine-Send-Open")
+    ;             this.g_Mutex.OnExecuted(5)
+    ;             this.lastUsedOpen := HiResTimer.GetTick()
+    ;             return true
+    ;         }
+    ;         return false
+    ;     } finally{
+    ;         PerformanceMonitor.End("LogEngine-Logic-Open")
+    ;     }
+    ; }
+
+    ; /**
+    ;  * 
+    ;  * @returns {Boolean} return true 表示等待Leech打出，false 表示continue
+    ;  */
+    ; static _Leech_1(){
+    ;     PerformanceMonitor.Start("LogEngine-Logic-Leech")
+
+    ;     try {
+    ;         ; 1. 检测Leech图标
+    ;         preLeech := StateManager._skillState.Get("Leech_Dark_L", false) || StateManager._skillState.Get("Leech_L", false)
+
+    ;         if (!preLeech) {
+    ;             return false
+    ;         }
+
+    ;         hasLeechBuff := StateManager._buffState.Get("Leech", false)
+    ;         hasSoulFlareBuff := StateManager._buffState.Get("SoulFlare", false)
+
+    ;         allowLeech := false
+
+    ;         ; 2. 判断是否启用只打自己的烙印
+    ;         local allowUsedLeechFromMySelf := this.g_isUsedLeechFromMySelf ?
+    ;         (
+    ;             this.BrandTriggerTime <= HiResTimer.GetTick()
+    ;             &&
+    ;             this.BrandOverTime == -1 ? true : HiResTimer.GetTick() <= this.BrandOverTime
+    ;         ) : true
+
+    ;         ; 3. 按照不同条件判断是否当前可用Leech
+    ;         if (hasSoulFlareBuff) {
+    ;             if (!hasLeechBuff) {
+    ;                 allowLeech := true
+    ;             }
+    ;         } else if (!hasSoulFlareBuff) {
+    ;             if (!hasLeechBuff) {
+    ;                 allowLeech := true
+    ;             }
+    ;             else if (this.g_isUseLeechHasLeechBuff && hasLeechBuff && allowUsedLeechFromMySelf) {
+    ;                 local LimitUsedLeech := this._LimitLeechOrOpenCondition(this.g_limitationLeech)
+    ;                 allowLeech := true && LimitUsedLeech
+    ;             }
+    ;             else {
+    ;                 allowLeech := false
+    ;             }
+    ;         }
+    ;         /**
+    ;          * 1. Leech图标就绪
+    ;          * 1.1 
+    ;          * 2. Leech图标未好
+    ;          */
+
+    ;         LeechReady := StateManager._skillState.Get("Leech_R", false)
+    ;         if (allowLeech && preLeech) {
+    ;             if (!LeechReady) {
+    ;                 ; OutputDebug "waiting Leech"
+    ;                 return true
+    ;             }
+
+    ;             if (LeechReady && HiResTimer.DeltaMs(this.lastUsedLeech, HiResTimer.GetTick()) >= LOGIC_INTERVAL) {
+    ;                 this.SendKey("f", "LogEngine-Send-Leech")
+    ;                 this.lastUsedLeech := HiResTimer.GetTick()
+    ;                 this.g_Mutex.OnExecuted(3)
+    ;                 ; OutputDebug "use Leech, " HiResTimer.GetTick()
+    ;                 this.flag_press_leech := true
+    ;                 return true
+    ;             }
+    ;         }
+    ;         ; OutputDebug "skip Leech"
+    ;         return false
+
+    ;     } finally {
+    ;         PerformanceMonitor.End("LogEngine-Logic-Leech")
+
+    ;     }
+    ; }
+
+
+
+
 }
+
+
+ 
