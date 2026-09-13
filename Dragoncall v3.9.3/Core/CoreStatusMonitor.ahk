@@ -3,7 +3,7 @@
 #Include ..\Lib\StatusMonitor.ahk
 #Include ..\Lib\StateManager.ahk
 
-class DragoncallStatusMonitor extends StatusMonitor {
+class CoreStatusMonitor extends StatusMonitor {
 
     Start(obj, duration, intervalMs, posX, posY) {
         gameHwnd := WinExist("ahk_exe BNSR.exe")

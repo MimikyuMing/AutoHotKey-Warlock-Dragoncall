@@ -3,9 +3,9 @@
 #Include ..\Lib\ActionMutex.ahk
 #Include ..\Lib\HiResTimer.ahk
 
-class DragoncallMutex extends ActionMutex {
+class CoreMutex extends ActionMutex {
     ; 业务状态
-    isSFirst := true
+    isSFirst := false
     thisFrameAct := 0
 
     ; 技能保护时长
