@@ -1,17 +1,16 @@
+#Requires AutoHotkey v2.0
+
 class InputQueue {
     static queue        := []
     static timer        := 0
     static isProcessing := false
-    static engine       := 0
 
     ; ---------- 发送间隔控制 ----------
-    static minIntervalUs := 5*1000   ; 同一按键最小发送间隔 10 毫秒（微秒）
-    static lastSendTicks := Map()    ; 每个按键的上次发送时刻 (QPC)
+    static minIntervalUs := 5 * 1000     ; 同一按键最小发送间隔（微秒）
+    static lastSendTicks := Map()        ; 每个按键的上次发送时刻
 
-    static Init(provider := 0) {
+    static Init() {
         this.Clear()
-        if provider
-            this.engine := provider
     }
 
     static Push(key) {
@@ -28,7 +27,8 @@ class InputQueue {
             if this.isProcessing
                 return
 
-            if (this.engine && !this.engine.g_LogicEnabled) {
+            ; 引擎停止时清空队列
+            if (!App.ctx.state.logicEnabled) {
                 this.Clear()
                 return
             }
@@ -46,18 +46,17 @@ class InputQueue {
             lastTick := this.lastSendTicks.Get(key, 0)
             elapsed := HiResTimer.DeltaUs(lastTick, HiResTimer.GetTick())
             if (elapsed < this.minIntervalUs)
-                allowSend := false   ; 间隔不足，丢弃
+                allowSend := false
 
             if (allowSend) {
                 SendInput key
                 this.lastSendTicks[key] := HiResTimer.GetTick()
             }
-            ; 被丢弃的按键不做任何处理
 
             this.isProcessing := false
 
             ; 继续处理下一个或停止定时器
-            if (this.queue.Length > 0 && (!this.engine || this.engine.g_LogicEnabled))
+            if (this.queue.Length > 0 && App.ctx.state.logicEnabled)
                 this.timer := SetTimer(ObjBindMethod(InputQueue, "Process"), -1)
             else
                 this.StopTimer()
