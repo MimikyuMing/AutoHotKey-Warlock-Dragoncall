@@ -1,85 +1,86 @@
 #Requires AutoHotkey v2.0
 
 #Include LogicEngine.ahk
-#Include ..\Lib\StateManager.ahk
-#Include ..\Lib\KeyLogger.ahk
-#Include App.ahk
 
 ; 侧键按下启动逻辑
 $*XButton2:: {
-    if LogicEngine.g_LogicEnabled
+    if (App.ctx.state.logicEnabled)
         return
-    LogicEngine.g_LogicEnabled := true
+    App.ctx.state.logicEnabled := true
     LogicEngine.ScheduleNextLogic()
 }
+
 ; 侧键松开停止逻辑
 $*XButton2 Up:: {
-    LogicEngine.g_LogicEnabled := false
+    App.ctx.state.logicEnabled := false
     SetTimer ObjBindMethod(LogicEngine, "LogicExecuter"), 0
-    LogicEngine.g_Mutex.ReleaseSleep()
+    App.ctx.mutex.ReleaseSleep()
     LogicEngine.g_LogicTimerPending := false
 }
+
 ; 鼠标侧键1模拟组合键
 $*XButton1:: {
     SendInput '^{Numpad9}'
 }
 
+; 烙印触发时间记录（技能X）
 ~$X:: {
-    ; MsgBox "HELLO WORLD"
     TetherBladeReady := StateManager._skillState.Get("TetherBlade", false)
     if (TetherBladeReady) {
-        LogicEngine.g_Mutex.SetSleep(5, LogicEngine.g_Mutex.xSleepTime)
-        if (LogicEngine.BrandTriggerTime <= HiResTimer.GetTick()) {
-            LogicEngine.BrandTriggerTime := HiResTimer.GetTick()
-            temp := HiResTimer.AddMs(4 * 1000, LogicEngine.BrandTriggerTime)
-            if (temp >= LogicEngine.BrandOverTime) {
-                LogicEngine.BrandOverTime := temp
+        App.ctx.mutex.SetSleep(5, App.ctx.mutex.xSleepTime)
+        if (App.ctx.state.BrandTriggerTime <= HiResTimer.GetTick()) {
+            App.ctx.state.BrandTriggerTime := HiResTimer.GetTick()
+            temp := HiResTimer.AddMs(4 * 1000, App.ctx.state.BrandTriggerTime)
+            if (temp >= App.ctx.state.BrandOverTime) {
+                App.ctx.state.BrandOverTime := temp
             }
         }
     }
 }
 
+; 烙印触发时间记录（技能2）
 ~$2:: {
-    ; MsgBox "HELLO WORLD"
     SoulShackleReady := StateManager._skillState.Get("SoulShackle", false)
     if (SoulShackleReady) {
-        if (LogicEngine.BrandTriggerTime <= HiResTimer.GetTick()) {
-            LogicEngine.BrandTriggerTime := HiResTimer.GetTick()
-            temp := HiResTimer.AddMs(8 * 1000, LogicEngine.BrandTriggerTime)
-            if (temp >= LogicEngine.BrandOverTime) {
-                LogicEngine.BrandOverTime := temp
+        if (App.ctx.state.BrandTriggerTime <= HiResTimer.GetTick()) {
+            App.ctx.state.BrandTriggerTime := HiResTimer.GetTick()
+            temp := HiResTimer.AddMs(8 * 1000, App.ctx.state.BrandTriggerTime)
+            if (temp >= App.ctx.state.BrandOverTime) {
+                App.ctx.state.BrandOverTime := temp
             }
         }
     }
 }
 
-
+; 重启
 F11:: {
     App.Cleanup()
     Reload
 }
 
+; 手动 Leech 记录
 ~$F:: {
     LeechReady := StateManager._skillState.Get("Leech_R", false)
     if (LeechReady) {
-        LogicEngine.lastUsedLeech := HiResTimer.GetTick()
-        LogicEngine.g_Mutex.OnExecuted(3)
+        App.ctx.state.lastUsedLeech := HiResTimer.GetTick()
+        App.ctx.mutex.OnExecuted(3)
     }
 }
 
-
+; 手动 SoulFlare 记录
 ~$Tab:: {
     soulFlareReady := StateManager._skillState.Get("SoulFlare", false)
     if (soulFlareReady) {
-        LogicEngine.g_Mutex.OnExecuted(2)
-        SetTimer ObjBindMethod(LogicEngine, "SetMarkToFalse"), -500
+        App.ctx.mutex.OnExecuted(2)
+        SetTimer ObjBindMethod(LogicEngine, "SetMarkToFalse", App.ctx), -500
     }
 }
 
+; 手动 Open 记录
 ~$3:: {
     OpenReady := StateManager._skillState.Get("Open_R", false)
     if (OpenReady) {
-        LogicEngine.g_Mutex.OnExecuted(5)
-        LogicEngine.lastUsedOpen := HiResTimer.GetTick()
+        App.ctx.mutex.OnExecuted(5)
+        App.ctx.state.lastUsedOpen := HiResTimer.GetTick()
     }
 }

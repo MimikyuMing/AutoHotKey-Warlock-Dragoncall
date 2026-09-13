@@ -1,38 +1,37 @@
 #Requires AutoHotkey v2.0
 
-; Lib\LogicRunner.ahk
-
 #Include ActionMutex.ahk
 #Include Globals.ahk
 #Include InputQueue.ahk
 #Include PerformanceMonitor.ahk
 
 class LogicRunner {
-    static g_LogicEnabled := false
+    ; 调度器私有状态（保留）
     static g_LogicTimerPending := false
-    static g_Mutex := ActionMutex()         ; 子类会覆盖为具体类型
-    static lastFrameId := 0
     static g_LastExecutionTick := 0
-    static startLogic := 0                  ; 供 CaptureEngine 使用
-    static isUsedInputQueue := 0
 
+    ; 上下文引用，由 App 注入到子类
+    static ctx := ""
 
-    ; ----- 抽象方法（子类必须实现）-----
+    ; ----- 抽象方法 -----
     static _MainLogic() => Error("LogicRunner: 必须实现 _MainLogic()", -1)
-    static _HandleSleepState() => Error("LogicRunner: 必须实现 _HandleSleepState()", -1)
+    static _HandleSleepState(ctx) => Error("LogicRunner: 必须实现 _HandleSleepState()", -1)
 
-    ; ----- 调度器实现 -----
+    ; ----- 调度器 -----
     static ScheduleNextLogic() {
-        if (!this.g_LogicEnabled || this.g_LogicTimerPending)
+        ctx := this.ctx
+        if (!ctx.state.logicEnabled || this.g_LogicTimerPending)
             return
         this.g_LogicTimerPending := true
         SetTimer ObjBindMethod(this, "LogicExecuter"), -LOGIC_INTERVAL
     }
 
     static LogicExecuter() {
+        ctx := this.ctx
+
         ; 停止条件
-        if (!this.g_LogicEnabled || !GetKeyState("XButton2", "P")) {
-            this.g_LogicEnabled := false
+        if (!ctx.state.logicEnabled || !GetKeyState("XButton2", "P")) {
+            ctx.state.logicEnabled := false
             SetTimer ObjBindMethod(this, "LogicExecuter"), 0
             this.g_LogicTimerPending := false
             return
@@ -48,23 +47,23 @@ class LogicRunner {
 
         isRunning := true
         try {
-            this._MainLogic()               ; 委派给子类
+            this._MainLogic()
         } finally {
             this.g_LastExecutionTick := HiResTimer.GetTick()
             isRunning := false
             this.g_LogicTimerPending := false
         }
 
-        if this.g_LogicEnabled
+        if (ctx.state.logicEnabled)
             this.ScheduleNextLogic()
     }
 
-    static SendKey(key, str){
-        params:= Format("Keyboard is {} , Logic is {}", key, str)
+    static SendKey(key, str) {
+        params := Format("Keyboard is {} , Logic is {}", key, str)
         PerformanceMonitor.Start(str)
-        if(this.isUsedInputQueue){
+        if (App.isUsedInputQueue) {
             InputQueue.Push(key)
-        }else{
+        } else {
             Send key
         }
         PerformanceMonitor.End(str, params)
