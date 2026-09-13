@@ -280,4 +280,18 @@ class PerformanceMonitor {
         }
         return merged
     }
+
+    ; 取消单个 stage 的计时（丢弃本次记录，不影响 records）
+    static Cancel(stage) {
+        if !this.enabled
+            return
+        try this.timers.Delete(stage)
+    }
+
+    ; 清空所有未结束的计时
+    static CancelAll() {
+        if !this.enabled
+            return
+        this.timers := Map()
+    }
 }
