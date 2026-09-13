@@ -1,154 +1,241 @@
 #Requires AutoHotkey v2.0
 
-#Include ..\Lib\HiResTimer.ahk
-#Include CaptureEngine.ahk
-#Include ..\Lib\KeyLogger.ahk
-#Include ..\Lib\IniManager.ahk
-#Include ..\Lib\Tools.ahk
-#Include GUI.ahk
-#Include ..\Lib\PerformanceMonitor.ahk
-#Include ..\Lib\InputQueue.ahk
-#Include LogicEngine.ahk
-#Include DragoncallGlobals.ahk
-#Include DragoncallStatusMonitor.ahk
-
+#Include ../Lib/Tools.ahk
+#Include RuntimeContext.ahk
+#Include CoreStatusMonitor.ahk
+#Include ../Lib/InputQueue.ahk
 
 class App {
-
     static debugMode := true
-
     static Millisecond := 1000
+    static configPath := A_AppData "\Dragoncall\Dragoncall-Config.ini"
+    static version := ""
+    static ctx := ""
+    static isUsedInputQueue := false
 
     static Init() {
-        if (this.debugMode)
-            OutputDebug "Step 1: Init start"
         HiResTimer.Init()
 
-        ; 确保用户配置文件存在（首次运行时从临时模板复制）
-        static userConfig := A_AppData "\Dragoncall\Dragoncall-Config.ini"
-        if !FileExist(userConfig) {
-            if !DirExist(A_AppData "\Dragoncall")
-                DirCreate(A_AppData "\Dragoncall")
-            if FileExist(A_Temp "\Dragoncall-Config.ini")
-                FileCopy A_Temp "\Dragoncall-Config.ini", userConfig, 0   ; 不覆盖
-            else
-                FileAppend "", userConfig   ; 创建空文件
-        }
+        ; 获取模板 INI 路径（优先 %TEMP%，其次脚本目录）
+        tmplConfig := this._GetTemplatePath()
 
-        if (this.debugMode)
-            OutputDebug "Step 2: HiResTimer OK"
+        ; 从模板读版本号
+        this.version := IniRead(tmplConfig, "version", "version", "unknown")
+
+        ; 版本检查 + 复制
+        this.EnsureConfig(tmplConfig)
+
+        ; 创建 ctx
+        this.ctx := RuntimeContext()
+
+        ; 加载配置
         this.LoadSettings()
-        if (this.debugMode)
-            OutputDebug "Step 3: LoadSettings OK"
+        LogicEngine.ctx := this.ctx
 
-        if (this.debugMode)
-            OutputDebug "Step 4: Before CaptureEngine.Start"
+        ; 5. 启动截图引擎
         CaptureEngine.Start()
-        if (this.debugMode)
-            OutputDebug "Step 5: CaptureEngine.Start OK"
 
-        ; 逐个添加后续初始化，每加一个测试一次
-        if (this.debugMode)
-            OutputDebug "Step 6: Before DragoncallMutex.Init"
-        DragoncallMutex.Init()
-        if (this.debugMode)
-            OutputDebug "Step 7: DragoncallMutex.Init OK"
+        ; 6. Mutex 初始化
+        CoreMutex.Init()
 
-        if (this.debugMode)
-            OutputDebug "Step 8: Before StateManager.Init"
+        ; 7. StateManager
         StateManager.Init(CaptureEngine)
-        if (this.debugMode)
-            OutputDebug "Step 9: StateManager.Init OK"
 
-        if (this.debugMode)
-            OutputDebug "Step 10: Before CreateTray"
+        ; 8. 托盘
         this.CreateTray()
-        if (this.debugMode)
-            OutputDebug "Step 11: CreateTray OK"
 
-        if (this.debugMode)
-            OutputDebug "Step 12: Before Log.Init"
+        ; 9. 日志
         Log.Init()
-        if (this.debugMode)
-            OutputDebug "Step 13: Log.Init OK"
 
-        if (this.debugMode)
-            OutputDebug "Step 14: Before KeyLogger.Start"
+        ; 10. KeyLogger
         KeyLogger.Start()
-        if (this.debugMode)
-            OutputDebug "Step 15: KeyLogger.Start OK"
 
-        if (this.debugMode)
-            OutputDebug "Step 16: Before InputQueue.Init"
-        InputQueue.Init(LogicEngine.g_LogicEnabled)
-        if (this.debugMode)
-            OutputDebug "Step 17: InputQueue.Init OK"
+        ; 11. InputQueue
+        InputQueue.Init()
 
-        intervalMs := 100
-        posX := 720
-        posY := 570
-
-        posX := 942 - 10 + 2
-        posY := 495 - 30
-        duration := 1000
-        monitior := DragoncallStatusMonitor()
-        monitior.Start(LogicEngine, duration, intervalMs, posX, posY)
+        ; 12. 状态监视器
+        monitior := CoreStatusMonitor()
+        monitior.Start(LogicEngine, 1000, 100, 942, 495)
+        OutputDebug "tmplConfig: " tmplConfig
+        OutputDebug "version read: " IniRead(tmplConfig, "version", "version", "NOT_FOUND")
 
         OnExit App.Cleanup
-        if (this.debugMode)
-            OutputDebug "Step 18: Init complete"
-
-        LogicEngine.InitLastUsed()
-        
     }
 
+    ; ============================================================
+    ; 版本检查
+    ; ============================================================
+    static EnsureConfig(tmplConfig) {
+        userConfig := this.configPath
+        userDir := A_AppData "\Dragoncall"
+
+        if !DirExist(userDir)
+            DirCreate userDir
+
+        ; 模板不存在 → 只保证用户配置存在
+        if !FileExist(tmplConfig) {
+            if !FileExist(userConfig)
+                FileAppend "", userConfig
+            return
+        }
+
+        ; 用户配置不存在 → 直接复制
+        if !FileExist(userConfig) {
+            FileCopy tmplConfig, userConfig, 1
+            return
+        }
+
+        ; 两边都存在 → 语义化版本比较
+        srcVer := IniRead(tmplConfig, "version", "version", "0.0.0")
+        userVer := IniRead(userConfig, "version", "version", "0.0.0")
+
+        if (this._CompareVersion(srcVer, userVer) <= 0)
+            return   ; 用户配置不旧，保留
+
+        ; 版本升级 → 合并
+        this._MergeConfig(tmplConfig, userConfig, srcVer)
+    }
+
+    ; 版本升级时合并：结构性节覆盖，设置节保留用户值
+    static _MergeConfig(tmplConfig, userConfig, newVer) {
+        ; 结构性节：整节覆盖
+        forceSections := ["Skill", "Focus", "Buff", "ColdDown"]
+        for section in forceSections {
+            try IniDelete(userConfig, section)
+            this._CopySection(tmplConfig, userConfig, section)
+        }
+
+        ; Settings 节：保留用户值，补充模板新增键
+        this._MergeSection(tmplConfig, userConfig, "Settings")
+
+        ; 更新版本号
+        IniWrite(newVer, userConfig, "version", "version")
+    }
+
+    ; 复制整个 section（模板 → 用户）
+    static _CopySection(srcIni, dstIni, section) {
+        content := IniRead(srcIni, section, , "")
+        if (content == "")
+            return
+        Loop Parse, content, "`n", "`r" {
+            line := Trim(A_LoopField)
+            if (line == "")
+                continue
+            pos := InStr(line, "=")
+            if (pos == 0)
+                continue
+            key := Trim(SubStr(line, 1, pos - 1))
+            val := Trim(SubStr(line, pos + 1))
+            IniWrite(val, dstIni, section, key)
+        }
+    }
+
+    ; 合并 section：用户已有键保留，模板新增键补充
+    static _MergeSection(srcIni, dstIni, section) {
+        content := IniRead(srcIni, section, , "")
+        if (content == "")
+            return
+        Loop Parse, content, "`n", "`r" {
+            line := Trim(A_LoopField)
+            if (line == "")
+                continue
+            pos := InStr(line, "=")
+            if (pos == 0)
+                continue
+            key := Trim(SubStr(line, 1, pos - 1))
+            val := Trim(SubStr(line, pos + 1))
+            ; 用户配置里没有这个键才写入
+            existing := IniRead(dstIni, section, key, "__NOT_FOUND__")
+            if (existing == "__NOT_FOUND__")
+                IniWrite(val, dstIni, section, key)
+        }
+    }
+
+    ; 语义化版本比较：a > b 返回 1，a < b 返回 -1，相等返回 0
+    static _CompareVersion(a, b) {
+        if (a == b)
+            return 0
+        pa := StrSplit(a, ".")
+        pb := StrSplit(b, ".")
+        len := Max(pa.Length, pb.Length)
+        loop len {
+            va := (A_Index <= pa.Length) ? Integer(pa[A_Index]) : 0
+            vb := (A_Index <= pb.Length) ? Integer(pb[A_Index]) : 0
+            if (va > vb)
+                return 1
+            if (va < vb)
+                return -1
+        }
+        return 0
+    }
+
+    ; ============================================================
+    ; 从 INI 加载到 ctx.config
+    ; ============================================================
     static LoadSettings() {
         settings := IniManager.ReadToMap("Settings")
+        cfg := this.ctx.config
 
-        ; 技能書設定
-        LogicEngine.g_Gold_Wingstorm := ParseBool(settings.Has("Gold_Wingstorm") ? settings["Gold_Wingstorm"] : false)
-        LogicEngine.g_Gold_Open := ParseBool(settings.Has("Gold_Open") ? settings["Gold_Open"] : false)
-        LogicEngine.g_Gold_Leech := ParseBool(settings.Has("Gold_Leech") ? settings["Gold_Leech"] : false)
+        cfg.goldWingstorm := ParseBool(settings.Get("Gold_Wingstorm", false))
+        cfg.goldOpen := ParseBool(settings.Get("Gold_Open", false))
+        cfg.goldLeech := ParseBool(settings.Get("Gold_Leech", false))
 
-        ; 技能特殊效果設定
-        LogicEngine.g_AutoSoulFlare := ParseBool(settings.Has("AutoSoulFlare") ? settings["AutoSoulFlare"] : false)
-        LogicEngine.g_isUseLeechHasLeechBuff := ParseBool(settings.Has("isUseLeechHasLeechBuff") ? settings["isUseLeechHasLeechBuff"] : false)
-        LogicEngine.g_limitationOpen := ParseBool(settings.Has("LimitationOpen") ? settings["LimitationOpen"] : false)
-        LogicEngine.g_limitationLeech := ParseBool(settings.Has("LimitationLeech") ? settings["LimitationLeech"] : false)
-        LogicEngine.g_enablePriorityUseDragoncall := ParseBool(settings.Has("EnablePriorityUseDragoncall") ? settings["EnablePriorityUseDragoncall"] : false)
-        LogicEngine.g_isUseOpenHasSoulFlareBuff := ParseBool(settings.Has("isUseOpenHasSoulFlareBuff") ? settings["isUseOpenHasSoulFlareBuff"] : false)
-        LogicEngine.g_isUsedLeechFromMySelf := ParseBool(settings.Has("isUsedLeechFromMySelf") ? settings["isUsedLeechFromMySelf"] : false)
-        
+        cfg.autoSoulFlare := ParseBool(settings.Get("AutoSoulFlare", false))
+        cfg.isUseLeechHasLeechBuff := ParseBool(settings.Get("isUseLeechHasLeechBuff", false))
+        cfg.limitationOpen := ParseBool(settings.Get("LimitationOpen", false))
+        cfg.limitationLeech := ParseBool(settings.Get("LimitationLeech", false))
+        cfg.enablePriorityUseDragoncall := ParseBool(settings.Get("EnablePriorityUseDragoncall", false)) ? 1 : 0
+        cfg.isUseOpenHasSoulFlareBuff := ParseBool(settings.Get("isUseOpenHasSoulFlareBuff", false))
+        cfg.isUsedLeechFromMySelf := ParseBool(settings.Get("isUsedLeechFromMySelf", false))
 
-        ; 模式設定
-        LogicEngine.isUsedInputQueue := ParseBool(settings.Has("IsUsedInputQueue") ? settings["IsUsedInputQueue"] : false)
-        CaptureEngine.RealtimeMode := ParseBool(settings.Has("RealtimeMode") ? settings["RealtimeMode"] : false)
-        intervalMs := Integer(settings.Get("InputQueueMinIntervalMs", 10))  ; 默认 10ms
-        InputQueue.minIntervalUs := intervalMs * this.Millisecond   ; 转换为微秒
+        ; 派生字段
+        cfg.leechBuffDuration := cfg.goldLeech ? 18 : 15
 
-        ; 性能检测器
-        enablePerf := ParseBool(settings.Has("PerformanceMonitor") ? settings["PerformanceMonitor"] : false)
-        enableCpu := ParseBool(settings.Has("MonitorCpu") ? settings["MonitorCpu"] : false)
-        enableMem := ParseBool(settings.Has("MonitorMemory") ? settings["MonitorMemory"] : false)
-        reportInterval := Integer(settings.Get("ReportInterval", 1))
-        PerformanceMonitor.Init(enablePerf, enableCpu, enableMem, reportInterval)
+        ; 传输层
+        this.isUsedInputQueue := ParseBool(settings.Get("IsUsedInputQueue", false))
+        CaptureEngine.RealtimeMode := ParseBool(settings.Get("RealtimeMode", false))
+        InputQueue.minIntervalUs := Integer(settings.Get("InputQueueMinIntervalMs", 10)) * this.Millisecond
 
+        ; 性能监控
+        PerformanceMonitor.Init(
+            ParseBool(settings.Get("PerformanceMonitor", false)),
+            ParseBool(settings.Get("MonitorCpu", false)),
+            ParseBool(settings.Get("MonitorMemory", false)),
+            Integer(settings.Get("ReportInterval", 1))
+        )
 
-        ; 日誌寫入設定
-        globalWriteLog := ParseBool(settings.Has("WRITELOG") ? settings["WRITELOG"] : false)
-        globalWriteKeyLog := ParseBool(settings.Has("WRITEKeyLOG") ? settings["WRITEKeyLOG"] : false)
-        Log.Enabled := globalWriteLog
-        KeyLogger.Enabled := globalWriteKeyLog
+        ; 日志
+        Log.Enabled := ParseBool(settings.Get("WRITELOG", false))
+        KeyLogger.Enabled := ParseBool(settings.Get("WRITEKeyLOG", false))
 
-        slowMs := Integer(settings.Get("PerformanceSlowThresholdMs", 10))
-        PerformanceMonitor.slowThresholdUs := slowMs * 1000
+        PerformanceMonitor.slowThresholdUs := Integer(settings.Get("PerformanceSlowThresholdMs", 10)) * 1000
+        PerformanceMonitor.slowLogEnabled := ParseBool(settings.Get("PerformanceSlowLogEnabled", "true"))
+    }
 
-        ; 从 INI 读取慢执行阈值（毫秒），默认 10ms
-        enabledSlow := settings.Has("PerformanceSlowLogEnabled")
-            ? settings["PerformanceSlowLogEnabled"]
-            : "true"
-        PerformanceMonitor.slowLogEnabled := ParseBool(enabledSlow)
+    ; ============================================================
+    ; 保存配置（供 GUI 调用）
+    ; ============================================================
+    static SaveSettingsToFile() {
+        static configPath := A_AppData "\Dragoncall\Dragoncall-Config.ini"
 
+        if !DirExist(A_AppData "\Dragoncall")
+            DirCreate(A_AppData "\Dragoncall")
+
+        cfg := this.ctx.config
+        IniWrite(cfg.goldWingstorm, configPath, "Settings", "Gold_Wingstorm")
+        IniWrite(cfg.goldOpen, configPath, "Settings", "Gold_Open")
+        IniWrite(cfg.autoSoulFlare, configPath, "Settings", "AutoSoulFlare")
+        IniWrite(cfg.isUseLeechHasLeechBuff, configPath, "Settings", "isUseLeechHasLeechBuff")
+        IniWrite(cfg.goldLeech, configPath, "Settings", "Gold_Leech")
+        IniWrite(cfg.limitationOpen, configPath, "Settings", "LimitationOpen")
+        IniWrite(cfg.limitationLeech, configPath, "Settings", "LimitationLeech")
+        IniWrite(StateManager.realtimeMode, configPath, "Settings", "RealtimeMode")
+        IniWrite(PerformanceMonitor.enabled, configPath, "Settings", "PerformanceMonitor")
+        IniWrite(PerformanceMonitor.monitorCpu, configPath, "Settings", "MonitorCpu")
+        IniWrite(PerformanceMonitor.monitorMem, configPath, "Settings", "MonitorMemory")
+        IniWrite(cfg.enablePriorityUseDragoncall, configPath, "Settings", "EnablePriorityUseDragoncall")
+        IniWrite(cfg.isUseOpenHasSoulFlareBuff, configPath, "Settings", "isUseOpenHasSoulFlareBuff")
+        IniWrite(cfg.isUsedLeechFromMySelf, configPath, "Settings", "isUsedLeechFromMySelf")
     }
 
     static CreateTray() {
@@ -162,6 +249,16 @@ class App {
         CaptureEngine.Cleanup()
         Log.Flush()
         PerformanceMonitor.DumpReport()
-        ToolTip "Cleanup completed", 0, 0
+    }
+
+    ; 模板 INI 路径：优先 %TEMP%，其次脚本目录
+    static _GetTemplatePath() {
+        tmplTemp := A_Temp "\Dragoncall-Config.ini"
+        if FileExist(tmplTemp)
+            return tmplTemp
+        tmplScript := A_ScriptDir "\Dragoncall-Config.ini"
+        if FileExist(tmplScript)
+            return tmplScript
+        return tmplTemp   ; 都不存在时返回预期路径，用于报错信息
     }
 }
