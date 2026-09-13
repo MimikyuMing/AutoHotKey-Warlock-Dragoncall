@@ -2,6 +2,7 @@
 
 #Include StateManager.ahk
 #Include PerformanceMonitor.ahk
+#Include CaptureClient.ahk
 
 ; RealtimeMap.ahk
 class RealtimeMap extends Map {

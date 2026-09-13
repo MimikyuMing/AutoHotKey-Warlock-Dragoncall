@@ -1,5 +1,7 @@
 #Requires AutoHotkey v2.0
 
+#Include Globals.ahk
+
 class KeyLogger {
     static WH_KEYBOARD_LL := 13
     static WM_KEYDOWN   := 0x100
